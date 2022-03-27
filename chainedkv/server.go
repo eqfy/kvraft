@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
-	"strings"
 	"sync"
-	"time"
 
-	"cs.ubc.ca/cpsc416/a3/fcheck"
-	"cs.ubc.ca/cpsc416/a3/kvslib"
+	fchecker "cs.ubc.ca/cpsc416/a3/fcheck"
 	"cs.ubc.ca/cpsc416/a3/util"
 	"github.com/DistributedClocks/tracing"
+
+	// "cs.ubc.ca/cpsc416/a3/kvslib"
+	"os"
+	// "time"
+	"reflect"
 )
 
 type ServerStart struct {
@@ -74,6 +76,20 @@ type PutFwd struct {
 	Value    string
 }
 
+type InternalPutFwd struct {
+	ClientId              string
+	OpId                  uint32
+	GId                   uint64
+	Key                   string
+	Value                 string
+	Token                 tracing.TracingToken
+	LocalTailServerIPPort string
+}
+
+type InternalPutResponse struct {
+	Token tracing.TracingToken
+}
+
 type PutFwdRecvd struct {
 	ClientId string
 	OpId     uint32
@@ -88,6 +104,24 @@ type PutResult struct {
 	GId      uint64
 	Key      string
 	Value    string
+}
+
+type PutRequest struct {
+	ClientId              string
+	OpId                  uint32
+	Key                   string
+	Value                 string
+	LocalTailServerIPPort string
+	Token                 tracing.TracingToken
+}
+
+type PutResponse struct {
+	ClientId string
+	OpId     uint32
+	GId      uint64
+	Key      string
+	Value    string
+	Token    tracing.TracingToken
 }
 
 type GetRecvd struct {
@@ -123,1024 +157,628 @@ type ServerConfig struct {
 	TracingIdentity   string
 }
 
-/** Custom Definitions **/
-
-const numClients = 256
-
-type NextServer struct {
-	NextServerId     uint8
-	NextServerIpPort string
-}
-
-type PrevServer struct {
-	PrevServerId     uint8
-	PrevServerIpPort string
-}
-
-type KVState map[string]string
-
-type ClientAndOpId struct {
-	ClientId string
-	OpId     uint32
-}
-
-type KeyValGId struct {
-	Key   string
-	Value string
-	GId   uint64
-}
-
 type Server struct {
 	// Server state may go here
-	serverId          uint8
-	coordAddr         string
-	serverAddr        string
-	serverListenAddr  string
-	clientListenAdr   string
-	strace            *tracing.Trace
-	ktrace            *tracing.Trace
-	ctrace            *tracing.Trace
-	tracer            *tracing.Tracer
-	KVState           KVState
-	PrevServer        *PrevServer
-	NextServer        *NextServer
-	IsHead            bool
-	IsTail            bool
-	currPutGId        uint64
-	prevPutGId        uint64
-	currGetGId        uint64
-	getGIdCount       uint64
-	CoordRPC          *rpc.Client
-	PrevServerRPC     *rpc.Client
-	NextServerRPC     *rpc.Client
-	KVSlibRPC         *rpc.Client
-	OpMap             map[ClientAndOpId]KeyValGId
-	putListenerRPCMap map[string]*rpc.Client
-	keepAlive         chan bool
-
-	pendingPutFwdArgs []PutFwdArg // List of PutFwds that are sent but not yet acked by the server
-
-	getQueue chan InternalGet
-	putQueue chan InternalPut
-	L        sync.RWMutex
-
-	pausePut           sync.WaitGroup // Used to pause processing puts if there is a replace next call
-	waitForReplaceNext sync.Cond
-}
-
-type InternalGet struct {
-	getReq kvslib.GetReq
-	done   chan InternalGetRes
-}
-
-type InternalPut struct {
-	putReq kvslib.PutReq
-	done   chan InternalPutRes
-}
-
-type InternalGetRes struct {
-	getRes kvslib.GetRes
-	err    error
-}
-
-type InternalPutRes struct {
-	putRes kvslib.PutRes
-	err    error
-}
-
-// RPC struct for listening to kvslib
-type Request struct {
-	server *Server
-}
-
-// RPC struct for listening to adjacent servers
-type ServerListener struct {
-	server *Server
-}
-
-// Server Request and Reply structs
-type GetKVStateArg struct {
 	ServerId uint8
-	Token    tracing.TracingToken
+	PrevServ string
+	NextServ string
+
+	mapMutex sync.Mutex // protects following
+	Map      map[string]string
+
+	Config           Addr
+	trace            *tracing.Trace
+	tracer           *tracing.Tracer
+	gIdMutex         sync.Mutex // protects following
+	LocalGId         uint64
+	HeadGId_K        uint64 // amount to increment GId at head by (for put requests)
+	TailFailureGId_K uint64 //amount to increment new tail's gid by for tail failures
+	fcheckAddr       string
+	putsMu           sync.Mutex       // protects following
+	cachedPuts       []InternalPutFwd // cache N internal put forwards for failure recovery. Map {client_id}:{opId} to InternalPutFwd
+	cachedPutsSize   uint64
 }
 
-type GetKVStateReply struct {
-	KVState KVState
-	Token   tracing.TracingToken
+type Addr struct {
+	CoordAddr        string
+	ServerAddr       string
+	ServerListenAddr string
+	ClientListenAddr string
 }
-
-type NewTailArg struct {
-	TailServerId     uint8
-	TailServerIpPort string
-	Token            tracing.TracingToken
-}
-
-type NewTailReply struct {
-	Token tracing.TracingToken
-}
-
-type PutFwdArg struct {
-	ClientId        string
-	OpId            uint32
-	GId             uint64
-	Key             string
-	Value           string
-	PutListenerAddr string
-	newGetGId       uint64
-	Token           tracing.TracingToken
-}
-
-type PutFwdReply struct {
-	Gid   uint64
-	Token tracing.TracingToken
-}
-
-type PutSuccessArg struct {
-	PutResult PutResult
-	Token     tracing.TracingToken
-}
-
-type GetFwdArg struct {
-	getGidCount uint64
-}
-type GetFwdReply struct{}
 
 func NewServer() *Server {
 	return &Server{}
 }
 
-func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serverServerAddr string, serverListenAddr string, clientListenAddr string, strace *tracing.Tracer) error {
-	serverIpPort := strings.Split(serverAddr, ":")
-	hBeatAckAddr, err := fcheck.StartOnlyAck(serverIpPort[0])
-	if err != nil {
-		err = errors.New("Error server calling StartOnlyAck failed: " + err.Error())
-		util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", err.Error())
-		return err
+type InternalJoinRequest struct {
+	ServerId         uint8
+	ServerListenAddr string
+	Token            tracing.TracingToken
+}
+
+type InternalJoinResponse struct {
+	Token tracing.TracingToken
+}
+
+type JoinRequest struct {
+	ServerId         uint8
+	ServerAddr       string
+	ServerListenAddr string
+}
+
+type GetRequest struct {
+	ClientId string
+	OpId     uint32
+	Key      string
+	Token    tracing.TracingToken
+}
+
+type GetResponse struct {
+	ClientId string
+	OpId     uint32
+	GId      uint64
+	Key      string
+	Value    string
+	Token    tracing.TracingToken
+}
+
+type BackwardsPropRequest struct {
+	GId uint64
+}
+type TokenRequest struct {
+	Token tracing.TracingToken
+}
+
+type SendServStateResponse struct {
+	diff map[string]string
+	GId  uint64
+}
+
+var joinComplete chan bool
+
+func (s *Server) Register(req InternalJoinRequest, res *InternalJoinResponse) (err error) {
+	strace := s.tracer.ReceiveToken(req.Token)
+	strace.RecordAction(NextServerJoining{req.ServerId})
+
+	s.NextServ = req.ServerListenAddr
+	// fmt.Printf("New node joined as tail, setting my next to be %s\n", s.NextServ)
+	strace.RecordAction(NewJoinedSuccessor{req.ServerId})
+	res.Token = strace.GenerateToken()
+	return
+}
+
+func (s *Server) JoinDoneReturnTokenTrace(req TokenRequest, res *bool) (err error) {
+	s.tracer.ReceiveToken(req.Token)
+	return
+}
+
+func (s *Server) FindTailServer(coordReply JoinResponse, reply *ServerJoinAck) error {
+	/* receive tail server from coord node*/
+
+	/* check if tail is itself...*/
+	tailServAddr := coordReply.TailServer.ServerListenAddr
+	if coordReply.TailServer.ServerId != s.ServerId {
+		/* send my own listening address to tail server*/
+		request := InternalJoinRequest{s.ServerId, s.Config.ServerListenAddr, s.trace.GenerateToken()}
+		// fmt.Printf("Sending my own listen address to tail server %s\n", tailServAddr)
+		tailServ, err := rpc.Dial("tcp", tailServAddr)
+		util.CheckErr(err, "Can't connect to tail server: ")
+
+		var res *InternalJoinResponse
+		err = tailServ.Call("Server.Register", request, &res)
+		util.CheckErr(err, "Error from tail server connection: ")
+
+		s.tracer.ReceiveToken(res.Token)
+		/* Tail server acks, so set prev server to Tail*/
+		s.PrevServ = tailServAddr
+		fmt.Printf("I'm now the tail, and previous server is %s\n", s.PrevServ)
+		tailServ.Close()
 	}
 
-	// Init fields
-	s.KVState = make(KVState)
-	s.OpMap = make(map[ClientAndOpId]KeyValGId)
-	s.getQueue = make(chan InternalGet, 1024) // potentially be smaller like 256 for the number of clients?
-	s.putQueue = make(chan InternalPut, 1024)
-	s.putListenerRPCMap = make(map[string]*rpc.Client)
-	s.waitForReplaceNext = *sync.NewCond(&sync.Mutex{})
+	s.trace.RecordAction(ServerJoined{s.ServerId})
+	reply.ServerId = s.ServerId
+	reply.Token = s.trace.GenerateToken()
+	joinComplete <- true
+	// joinComplete = true
+	return nil
+}
 
-	///////////////////////////////////////////////////////////////////////
-	// Part 1: Join the system (chain of servers)
+func (s *Server) UpdateGIdBackwardsProp(req BackwardsPropRequest, res *bool) (err error) {
+	/* set my gid to be requests' gid*/
+	s.gIdMutex.Lock()
+	s.LocalGId = req.GId
+	s.gIdMutex.Unlock()
 
-	// trace: ServerStart, ServerJoining
-	s.serverId = serverId
-	s.coordAddr = coordAddr
-	s.serverListenAddr = serverListenAddr
-	s.clientListenAdr = clientListenAddr
-	s.tracer = strace
-	s.strace = strace.CreateTrace()
-	s.strace.RecordAction(ServerStart{ServerId: serverId})
-	s.strace.RecordAction(ServerJoining{ServerId: serverId})
-
-	// Establish RPC client and listen connection with Coord
-	var coordConnErr error
-	s.CoordRPC, coordConnErr = rpc.Dial("tcp", coordAddr)
-	if coordConnErr != nil {
-		coordConnErr = errors.New("Error server " + string(serverId) + " connecting to coord: " + coordConnErr.Error())
-		util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", coordConnErr.Error())
-		return coordConnErr
-	}
-
-	// Trace ServerJoining
-	// Call SCoord.Join()
-	// Receive tokens and configure the response values to the server
-	var joinReq SCoordJoinArg = SCoordJoinArg{
-		ServerInfo: ServerInfo{
-			ServerId:            serverId,
-			ServerAPIListenAddr: serverListenAddr,
-			CoordAPIListenAddr:  serverListenAddr,
-			ClientAPIListenAddr: clientListenAddr,
-			HBeatAckAddr:        hBeatAckAddr,
-		},
-		Token: s.strace.GenerateToken(),
-	}
-	var joinRes SCoordJoinReply
-	joinReqErr := s.CoordRPC.Call("SCoord.Join", joinReq, &joinRes)
-	if joinReqErr != nil {
-		joinReqErr = errors.New("Error server " + string(serverId) + " calling SCoord.Join: " + joinReqErr.Error())
-		util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", joinReqErr.Error())
-		return joinReqErr
-	}
-	s.strace = s.tracer.ReceiveToken(joinRes.Token)
-
-	setupServerListenerErr := s.setupServerListener()
-	if setupServerListenerErr != nil {
-		return setupServerListenerErr
-	}
-
-	if joinRes.PrevServerId == 0 { // Is a head server
-		s.PrevServer = nil
+	if s.PrevServ != "" {
+		fmt.Printf("(Backwards Prop GId) Received tail's GId=%d, propagating upwards\n", s.LocalGId)
+		go BackwardsPropGIdCallPrevServer(s.PrevServ, req)
 	} else {
-		s.PrevServer = &PrevServer{PrevServerId: joinRes.PrevServerId, PrevServerIpPort: joinRes.PrevServerIpPort}
+		fmt.Printf("(Backwards Prop GId) Head Server: Propagation complete, received tail's GId=%d\n", s.LocalGId)
+	}
+	return
+}
 
-		// Establish RPC client and listen connection with the PrevServer
-		setupRPCWithPrevServerErr := s.setupRPCWithPrevServer()
-		if setupRPCWithPrevServerErr != nil {
-			return setupRPCWithPrevServerErr
+/* Just ignore errors in backwards prop, because not essential service...*/
+func BackwardsPropGIdCallPrevServer(prevServ string, req BackwardsPropRequest) {
+	conn, err := rpc.Dial("tcp", prevServ)
+	if err != nil {
+		fmt.Printf("(Backwards Prop GId) Can't connect to previous server. Terminating propagation. " + err.Error())
+		return
+	}
+	res := false
+	fmt.Printf("Calling previous server %s and sending request %v\n", prevServ, req)
+	err = conn.Call("Server.UpdateGIdBackwardsProp", req, &res)
+	if err != nil {
+		fmt.Printf("(Backwards Prop GId) Error from sending previous server backwards prop request. Terminating propagation. " + err.Error())
+		return
+	}
+	conn.Close()
+}
+
+func (s *Server) Get(req GetRequest, res *GetResponse) (err error) {
+	/*generate gid*/
+	s.gIdMutex.Lock()
+	gid_tail := s.LocalGId + 1
+	s.LocalGId++
+	s.gIdMutex.Unlock()
+
+	getTrace := s.tracer.ReceiveToken(req.Token)
+	getTrace.RecordAction(GetRecvd{req.ClientId, req.OpId, req.Key})
+
+	var retVal string
+	s.mapMutex.Lock()
+	if _, ok := s.Map[req.Key]; ok {
+		retVal = s.Map[req.Key]
+	} else {
+		fmt.Printf("(Get Request) key=%s was not found\n", req.Key)
+		retVal = ""
+	}
+	s.mapMutex.Unlock()
+
+	getTrace.RecordAction(GetOrdered{req.ClientId, req.OpId, gid_tail, req.Key})
+	getTrace.RecordAction(GetResult{req.ClientId, req.OpId, gid_tail, req.Key, retVal})
+
+	/* for tail failures: propagate current GId backwards for every K requests*/
+	if gid_tail%s.TailFailureGId_K == 0 {
+		fmt.Printf("(Backwards Prop GId) Begin propagating tail's GId=%d upwards\n", gid_tail)
+		/* dial prevServer and propagate GId backwards*/
+		go BackwardsPropGIdCallPrevServer(s.PrevServ, BackwardsPropRequest{gid_tail})
+	}
+
+	*res = GetResponse{req.ClientId, req.OpId, gid_tail, req.Key, retVal, getTrace.GenerateToken()}
+	return
+}
+
+func (s *Server) Put(req PutRequest, res *bool) (err error) {
+
+	/* generate gid*/
+	s.gIdMutex.Lock()
+	gid_head := s.LocalGId + s.HeadGId_K
+	s.LocalGId += s.HeadGId_K
+	s.gIdMutex.Unlock()
+
+	/* set key, val*/
+	s.mapMutex.Lock()
+	s.Map[req.Key] = req.Value
+	s.mapMutex.Unlock()
+
+	putTrace := s.tracer.ReceiveToken(req.Token)
+	putTrace.RecordAction(PutRecvd{ClientId: req.ClientId, OpId: req.OpId, Key: req.Key, Value: req.Value})
+	/* just use dummy gid for now...*/
+
+	putTrace.RecordAction(PutOrdered {ClientId: req.ClientId, OpId: req.OpId, GId: gid_head, Key: req.Key,Value: req.Value})
+	putFwd := PutFwd {ClientId: req.ClientId, OpId: req.OpId, GId: gid_head, Key: req.Key,Value: req.Value}
+
+	if s.NextServ == ""{
+		putTrace.RecordAction(PutResult(putFwd))
+
+		/* Call method in tail server with response*/
+		clientConn, err := rpc.Dial("tcp", req.LocalTailServerIPPort)
+		if err != nil{
+			return errors.New("(PUT): Can't connect back to client to send put result" + err.Error())
 		}
 
-		//	Write to the PrevServer to declare as NewTail
-		//  and wait for and receive an ACK from PrevServer
-		var newTailReq NewTailArg = NewTailArg{TailServerId: serverId, TailServerIpPort: serverListenAddr, Token: s.strace.GenerateToken()}
-		var newTailRes NewTailReply
-		newTailErr := s.PrevServerRPC.Call("ServerListener.NewTail", newTailReq, &newTailRes)
-		if newTailErr != nil {
-			newTailErr = errors.New("Error server " + string(serverId) + " calling ServerListener.NewTail: " + newTailErr.Error())
-			util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", newTailErr.Error())
-			return newTailErr
+		fmt.Printf("(HEAD) Sending respones back to %s\n", req.LocalTailServerIPPort)
+		clientRes := false
+		putRes := PutResponse{req.ClientId,req.OpId,gid_head,req.Key,req.Value,putTrace.GenerateToken()}
+		err = clientConn.Call("KVS.ReceivePutResult", putRes, &clientRes)
+		if err != nil{
+			return errors.New("(PUT): Can't call RPC method ReceivePutResult on client" + err.Error())
 		}
-		s.strace = s.tracer.ReceiveToken(newTailRes.Token)
-	}
-	s.IsHead = joinRes.IsHead
-	s.IsTail = joinRes.IsTail
-
-	// trace ServerJoined(s)
-	s.strace.RecordAction(ServerJoined{ServerId: serverId})
-
-	// Call Sccord.Joined()
-	var joinedReq SCoordJoinedArg = SCoordJoinedArg{ServerId: serverId, Token: s.strace.GenerateToken()}
-	var joinedRes SCoordJoinedReply
-	joinedReqErr := s.CoordRPC.Call("SCoord.Joined", joinedReq, &joinedRes)
-	if joinedReqErr != nil {
-		joinedReqErr = errors.New("Error server " + string(serverId) + " calling SCoord.Joined: " + joinedReqErr.Error())
-		util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: Scoord.Joined failed ", joinedReqErr.Error())
-		return joinedReqErr
-	}
-	s.strace = s.tracer.ReceiveToken(joinedRes.Token)
-
-	///////////////////////////////////////////////////////////////////////
-	// Part 2: Start listening to the client
-
-	// Establish listening connection to Client KVSLib
-	setupKVSlibListenerErr := s.setupClientListener()
-	if setupKVSlibListenerErr != nil {
-		return setupKVSlibListenerErr
-	}
-
-	go s.getProcessor()
-	go s.putProcessor()
-
-	<-s.keepAlive
-	return nil
-}
-
-func (s *Server) setupServerListener() error {
-	fmt.Println("listening on Server Listen address", s.serverListenAddr)
-	laddr, err := net.ResolveTCPAddr("tcp", s.serverListenAddr)
-	if err != nil {
-		util.PrintfRed("%s%s\n", "Error unable to resolve Server Listen address", err.Error())
-		return err
-	}
-
-	inbound, err := net.ListenTCP("tcp", laddr)
-	if err != nil {
-		util.PrintfRed("%s%s\n", "Error unable to listen to Server Listen address", err.Error())
-		return err
-	}
-
-	sl := &ServerListener{server: s}
-
-	serverRPCListener := rpc.NewServer()
-	serverRPCListener.Register(sl)
-	go serverRPCListener.Accept(inbound)
-
-	return err
-}
-
-func (s *Server) setupClientListener() error {
-	fmt.Println("listening on Client address", s.clientListenAdr)
-	laddr, err := net.ResolveTCPAddr("tcp", s.clientListenAdr)
-	if err != nil {
-		util.PrintfRed("%s%s\n", "Error unable to resolve Client address", err.Error())
-		return err
-	}
-
-	inbound, err := net.ListenTCP("tcp", laddr)
-	if err != nil {
-		util.PrintfRed("%s%s\n", "Error unable to listen to Client address", err.Error())
-		return err
-	}
-
-	r := &Request{server: s}
-
-	clientRPCListener := rpc.NewServer()
-	clientRPCListener.Register(r)
-	go clientRPCListener.Accept(inbound)
-
-	return err
-}
-
-// If we receive a NextServer through NewTail request:
-//  - trace NextServerJoining(NextServer)
-// 	- Update the NextServer
-// 	- Send an NewJoinedSuccessorACK to the NextServer (reply with the token is enough?)
-//  - Estblish connection with the NextServer ??
-func (sl *ServerListener) NewTail(arg NewTailArg, reply *NewTailReply) error {
-	sl.server.strace = sl.server.tracer.ReceiveToken(arg.Token)
-	newTailServerId := arg.TailServerId
-	newTailServerIpPort := arg.TailServerIpPort
-	sl.server.strace.RecordAction(NextServerJoining{NextServerId: newTailServerId})
-	sl.server.NextServer = &NextServer{
-		NextServerId:     newTailServerId,
-		NextServerIpPort: newTailServerIpPort,
-	}
-	reply.Token = sl.server.strace.GenerateToken()
-	fmt.Printf("ServerListener.NewTail (%v)", arg)
-
-	// Establish client and listen connection with NextServer
-	setupRPCWithNextServerErr := sl.server.setupRPCWithNextServer()
-	if setupRPCWithNextServerErr != nil {
-		return setupRPCWithNextServerErr
-	}
-
-	return nil
-}
-
-func (s *Server) setupRPCWithPrevServer() error {
-	var prevServerConnErr error
-	if s.PrevServer == nil {
-		return nil
-	}
-	s.PrevServerRPC, prevServerConnErr = rpc.Dial("tcp", s.PrevServer.PrevServerIpPort)
-	if prevServerConnErr != nil {
-		prevServerConnErr = errors.New("Error server " + string(s.serverId) + "connecting to PrevServer " + string(s.PrevServer.PrevServerId) + "resulting :" + prevServerConnErr.Error())
-		util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", prevServerConnErr.Error())
-		return prevServerConnErr
-	}
-
-	return nil
-}
-
-func (s *Server) setupRPCWithNextServer() error {
-	if s.NextServer == nil {
+		clientConn.Close()
 		return nil
 	}
 
-	var nextServerConnErr error
-	s.NextServerRPC, nextServerConnErr = rpc.Dial("tcp", s.NextServer.NextServerIpPort)
-	if nextServerConnErr != nil {
-		nextServerConnErr = errors.New("Error server " + string(s.serverId) + "connecting to NextServer " + string(s.NextServer.NextServerId) + "resulting :" + nextServerConnErr.Error())
-		util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", nextServerConnErr.Error())
-		return nextServerConnErr
+
+	/* call internal Put Asynchronously*/
+	putTrace.RecordAction(putFwd)
+	nextServRes := new(bool)
+	nextServReq := InternalPutFwd{ClientId: req.ClientId, OpId: req.OpId, GId: gid_head, Key: req.Key, Value: req.Value, Token: putTrace.GenerateToken(),
+		LocalTailServerIPPort: req.LocalTailServerIPPort}
+
+	addToCachedPuts(s, nextServReq)
+
+	nextServ, err := rpc.Dial("tcp", s.NextServ)
+	if err != nil {
+		/* If next server fails, just reply as normal, and NotifyServerFailure will handle this (re-send request)*/
+		fmt.Printf("(PUT): from Head Serv - Can't connect to next server: " + err.Error() + " .Returning as normal, and waiting for Failure Notification")
+		*res = true
+		return
 	}
-	return nil
+
+	putCall := nextServ.Go("Server.InternalPut", nextServReq, nextServRes, nil)
+	go closeOnDone(putCall, nextServ)
+	*res = true
+
+	return
 }
 
-// If we receive PrevServerFailed:
-// 	- trace ServerFailRecv(PrevServer)
-// 	- Set failedServer = PrevServer and PrevServer = the new prevserver coord sent
-//  - Estbablish connection with the updated PrevServer
-//  - Ask PrevServer to send over its KVState, and update its KVStates ??
-//  - trace: NewFailoverPredecessor(PrevServer), ServerFailHandled(failedServer)
-//  - ACK to coord as reconfig done
-func (cl *ServerListener) ReplacePrev(arg ReplacePrevServerArg, reply *ReplacePrevServerReply) error {
-	cl.server.ctrace = cl.server.tracer.ReceiveToken(arg.Token)
-	// Note: this implementation relies on Coord sending the prevserver Id as part of the failedServerIds
-	var FailedPrevServerId uint8
-	for _, FailedServerId := range arg.FailedServerIds {
-		cl.server.ctrace.RecordAction(ServerFailRecvd{FailedServerId})
+func closeOnDone(putCall *rpc.Call, nextServConn *rpc.Client) {
+	<-putCall.Done
+	nextServConn.Close()
+}
 
-		// if it's current failed server id == prev server
-		if FailedServerId == cl.server.PrevServer.PrevServerId {
-			FailedPrevServerId = FailedServerId
-		}
+func (s *Server) InternalPut(req InternalPutFwd, res *bool) (err error) {
+
+	/* set key, val*/
+	s.gIdMutex.Lock()
+	if req.GId > s.LocalGId {
+		s.LocalGId = req.GId /* ensure servers in the chain have same gid*/
 	}
+	s.gIdMutex.Unlock()
 
-	cl.server.L.Lock()
-	if arg.NewPrevServerId != 0 {
-		cl.server.PrevServer = &PrevServer{
-			PrevServerId:     arg.NewPrevServerId,
-			PrevServerIpPort: arg.NewPrevServerIpPort,
+	s.mapMutex.Lock()
+	s.Map[req.Key] = req.Value
+	s.mapMutex.Unlock()
+
+	putTrace := s.tracer.ReceiveToken(req.Token)
+	putTrace.RecordAction(PutFwdRecvd{ClientId: req.ClientId, OpId: req.OpId, GId: req.GId, Key: req.Key, Value: req.Value})
+	putFwd := PutFwd{ClientId: req.ClientId, OpId: req.OpId, GId: req.GId, Key: req.Key, Value: req.Value}
+
+	/* just cache the put anyways (even for tail*/
+	nextServReq := InternalPutFwd{ClientId: req.ClientId, OpId: req.OpId, GId: req.GId, Key: req.Key, Value: req.Value, Token: putTrace.GenerateToken(),
+		LocalTailServerIPPort: req.LocalTailServerIPPort}
+
+	addToCachedPuts(s, nextServReq)
+
+	if s.NextServ == "" {
+		// print("ENTRANCE\n")
+
+		gidTailOrdered := req.GId
+		/* re-order if req.GId < current tail's local GId */
+		s.gIdMutex.Lock()
+		if req.GId < s.LocalGId {
+			gidTailOrdered = s.LocalGId + 1
+			s.LocalGId++
 		}
-		setupRPCWithPrevServerErr := cl.server.setupRPCWithPrevServer()
-		if setupRPCWithPrevServerErr != nil {
-			cl.server.L.Unlock()
-			return fmt.Errorf("Server contact prev server failed")
+		s.gIdMutex.Unlock()
+		// print("SECOND\n")
+
+		putFwd.GId = gidTailOrdered
+		putTrace.RecordAction(PutResult(putFwd))
+
+		/* Call method in tail server with response*/
+		clientConn, err := rpc.Dial("tcp", req.LocalTailServerIPPort)
+		if err != nil {
+			print(err.Error() + "\n")
+			return errors.New("(PUT): Can't connect back to client to send put result" + err.Error())
 		}
 
-		cl.server.ctrace.RecordAction(NewFailoverPredecessor{NewPrevServerId: arg.NewPrevServerId})
+		defer clientConn.Close()
+		fmt.Printf("Sending respones back to %s\n", req.LocalTailServerIPPort)
+		clientRes := false
+		putRes := PutResponse{req.ClientId, req.OpId, gidTailOrdered, req.Key, req.Value, putTrace.GenerateToken()}
+		// print("VORHEES\n")
+		// print(req.OpId)
+		err = clientConn.Call("KVS.ReceivePutResult", putRes, &clientRes)
+		if err != nil {
+			return errors.New("(PUT): Can't call RPC method ReceivePutResult on client" + err.Error())
+		}
 	} else {
-		cl.server.PrevServer = nil
-	}
-	cl.server.L.Unlock()
-
-	cl.server.ctrace.RecordAction(ServerFailHandled{FailedServerId: FailedPrevServerId})
-
-	reply.LatestProcessedGId = max(cl.server.currGetGId, cl.server.currPutGId)
-	reply.HandledFailServerIds = append(reply.HandledFailServerIds, FailedPrevServerId)
-	reply.Token = cl.server.ctrace.GenerateToken()
-
-	return nil
-}
-
-// If we receive NextServerFailed:
-//	- trace ServerFailRecvd(NextServer)
-// 	- Set failedServer = NextServer and  NextServer = the server coord sent (no need?)
-//  - Establish connection with the updated NextServer
-//  - trace: NewFailoverSuccessor(NextServer), ServerFailHandled(failedServer)
-//  - ACK to coord as reconfig done
-//  - Respond to putrequests that are unresponded (does server worry about ths)??
-
-// S1 S2 S3
-// S3 fails
-// S2's pendingPutFwdArgs may not be empty
-// S2's replace next should try to empty pendingPutFwdArgs
-// Send trace putResult, and call the relavant client's PutSuccess
-
-// S1 S2 S3 S4
-// S3 fails
-// S2's pendingPutFwdArgs may not be empty
-// S2's replace next should try to empty pendingPutFwdArgs first by sending putFwd to S4
-// Send trace putResult, and call the relavant client's PutSuccess
-func (cl *ServerListener) ReplaceNext(arg ReplaceNextServerArg, reply *ReplaceNextServerReply) error {
-	cl.server.pausePut.Add(1)
-
-	util.PrintfGreen("Replace next started\n")
-	cl.server.L.Lock()
-	cl.server.ctrace = cl.server.tracer.ReceiveToken(arg.Token)
-	// Note: this implementation relies on Coord sending the nextserver Id as part of the failedServerIds
-	var FailedNextServerId uint8
-	for _, FailedServerId := range arg.FailedServerIds {
-		cl.server.ctrace.RecordAction(ServerFailRecvd{FailedServerId})
-
-		// if it's current failed server id == prev server
-		if FailedServerId == cl.server.NextServer.NextServerId {
-			FailedNextServerId = FailedServerId
-		}
-	}
-
-	if arg.NewNextServerId != 0 {
-		cl.server.NextServer = &NextServer{
-			NextServerId:     arg.NewNextServerId,
-			NextServerIpPort: arg.NewNextServerIpPort,
-		}
-		setupRPCWithNextServerErr := cl.server.setupRPCWithNextServer()
-		if setupRPCWithNextServerErr != nil {
-			return setupRPCWithNextServerErr
-		}
-		cl.server.ctrace.RecordAction(NewFailoverSuccessor{NewNextServerId: arg.NewNextServerId})
-
-		for _, putFwdReq := range cl.server.pendingPutFwdArgs {
-			if putFwdReq.GId <= arg.LatestProcessedGId {
-				continue
-			}
-			var putFwdReply PutFwdReply
-			putFwdErr := cl.server.NextServerRPC.Call("ServerListener.PutForward", putFwdReq, &putFwdReply)
-			if putFwdErr != nil {
-				util.PrintfRed("Put fwd error %v\n", putFwdErr)
-				cl.server.L.Unlock()
-				return putFwdErr
-			}
-
-			// Is this necessary? maybe a timeout at the previous server to resend putFwd is sufficient??
-			if cl.server.PrevServer != nil {
-				putFwdAckErr := cl.server.PrevServerRPC.Call("ServerListener.PutForwardAck", putFwdReply.Gid, nil)
-				if putFwdAckErr != nil {
-					util.PrintfRed("Put fwd ack error %v\n", putFwdErr)
-					cl.server.L.Unlock()
-					return putFwdAckErr
-				}
-			}
-		}
-		cl.server.pendingPutFwdArgs = []PutFwdArg{}
-	} else { // tail server failure, curr server is a new tail server
-		cl.server.NextServer = nil
-		// All unacked pending put fwds are now known to have succeeded. Call the relavant client and report put success
-		for _, putFwdReq := range cl.server.pendingPutFwdArgs {
-			if putFwdReq.GId <= arg.LatestProcessedGId {
-				continue
-			}
-
-			util.PrintfGreen("Replace next: pendingPutFwd arg sent as a put %v\n", putFwdReq)
-			ptrace := cl.server.tracer.ReceiveToken(putFwdReq.Token)
-			putRes := PutResult{
-				ClientId: putFwdReq.ClientId,
-				OpId:     putFwdReq.OpId,
-				GId:      putFwdReq.GId,
-				Key:      putFwdReq.Key,
-				Value:    putFwdReq.Value,
-			}
-
-			putListenerRPC, putListenerConnErr := rpc.Dial("tcp", putFwdReq.PutListenerAddr)
-
-			if putListenerConnErr != nil {
-				putListenerConnErr = errors.New("Error occurred connecting to PutListener: " + putListenerConnErr.Error())
-				util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", putListenerConnErr.Error())
-				cl.server.L.Unlock()
-				return putListenerConnErr
-			}
-			ptrace.RecordAction(putRes)
-			putResKVS := kvslib.PutRes{
-				OpId:  putFwdReq.OpId,
-				GId:   putFwdReq.GId,
-				Key:   putFwdReq.Key,
-				Token: ptrace.GenerateToken(),
-			}
-			err := putListenerRPC.Call("ServerListener.PutSuccess", putResKVS, nil)
-			util.PrintfGreen("ReplaceNext PutSuccess error: %v\n", err)
-		}
-		cl.server.pendingPutFwdArgs = []PutFwdArg{}
-	}
-	cl.server.L.Unlock()
-	cl.server.pausePut.Done()
-	// cl.server.waitForReplaceNext.Broadcast()
-	cl.server.ctrace.RecordAction(ServerFailHandled{FailedServerId: FailedNextServerId})
-	reply.HandledFailServerIds = append(reply.HandledFailServerIds, FailedNextServerId)
-	reply.Token = cl.server.ctrace.GenerateToken()
-	util.PrintfGreen("Replace next ended\n")
-
-	return nil
-}
-
-// When it's a Put Operation:
-//	If this server is not head server, return error that KVSlib sent put to a non-head server
-//	- PutRecvd,
-//  - Add it to the server's OpMap
-//  - update the KVState
-//  - Update GId
-//  - (PutOrdered(gid)), PutFwd(gid)
-// 	- forward this put request and current GId and GIds to the next server
-func (r *Request) Put(arg kvslib.PutReq, reply *kvslib.PutRes) error {
-	if r.server.PrevServer != nil {
-		putReqErr := errors.New("Server " + string(r.server.serverId) + "which is not head server, received a put request")
-		util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", putReqErr.Error())
-		return putReqErr
-	}
-
-	done := make(chan InternalPutRes, 1)
-	r.server.putQueue <- InternalPut{putReq: arg, done: done}
-	<-done
-	return nil
-}
-
-func (s *Server) putProcessor() error {
-	for {
-		util.PrintfGreen("waiting for replace next to finish\n")
-		s.pausePut.Wait() // Wait until ReplaceNext is finishes handling remaining puts
-		util.PrintfGreen("done waiting for replace next to finish\n")
-
-		internalPutReq := <-s.putQueue
-
-		putReq := internalPutReq.putReq
-		var internalPutRes InternalPutRes
-
-		util.PrintfGreen("Put got %v\n", putReq) // TODO Remove
-
-		ptrace := s.tracer.ReceiveToken(putReq.Token)
-		ptrace.RecordAction(PutRecvd{
-			ClientId: putReq.ClientId,
-			OpId:     putReq.OpId,
-			Key:      putReq.Key,
-			Value:    putReq.Value,
-		})
-
-		// Handle duplicate requests
-		clientAndOpId := ClientAndOpId{ClientId: putReq.ClientId, OpId: putReq.OpId}
-		_, existsInMap := s.OpMap[clientAndOpId]
-		var GId uint64
-		if !existsInMap {
-			util.PrintfGreen("LOCK Processing new put lock 1\n")
-			s.L.Lock()
-			util.PrintfGreen("LOCK Processing new put lock 2\n")
-			s.KVState[putReq.Key] = putReq.Value
-
-			s.prevPutGId = s.currPutGId
-			s.currPutGId = (max(putReq.NewGetGId, s.prevPutGId)/0x1000 + 1) * 0x1000
-			GId = s.currPutGId
-			s.OpMap[clientAndOpId] = KeyValGId{Key: putReq.Key, Value: putReq.Value, GId: s.currPutGId}
-			s.L.Unlock()
-			util.PrintfGreen("Processing new put unlock 1\n")
-			ptrace.RecordAction(PutOrdered{
-				ClientId: putReq.ClientId,
-				OpId:     putReq.OpId,
-				GId:      GId,
-				Key:      putReq.Key,
-				Value:    putReq.Value,
-			})
-		} else {
-			GId = s.OpMap[clientAndOpId].GId
-			// FIXME maybe we can just continue here if the put is not new
-			// internalPutReq.done <- internalPutRes
-			// continue
-		}
-
-		// don't really need following varible
-		// since the nextserver doesn't really reply to prevserver on putfwd
-		var putFwdReply PutFwdReply
-		if s.NextServer != nil { // is middle server or head server if more than 1 server
-			ptrace.RecordAction(PutFwd{
-				ClientId: putReq.ClientId,
-				OpId:     putReq.OpId,
-				GId:      GId,
-				Key:      putReq.Key,
-				Value:    putReq.Value,
-			})
-
-			putFwdReq := PutFwdArg{
-				ClientId:        putReq.ClientId,
-				OpId:            putReq.OpId,
-				GId:             GId,
-				Key:             putReq.Key,
-				Value:           putReq.Value,
-				PutListenerAddr: putReq.PutListenerAddr,
-				newGetGId:       putReq.NewGetGId,
-				Token:           ptrace.GenerateToken(),
-			}
-
-			// Check if putFwd already exists in pendingPutFwdArgs, if it doesn't exist, add it
-			alreadyExists := false
-			util.PrintfGreen("%s\n", "LOCK Locking in putProcessor to send PutForWard 1")
-			s.L.Lock()
-			util.PrintfGreen("%s\n", "LOCK Locking in putProcessor to send PutForWard 2")
-			for _, putFwdArgInQueue := range s.pendingPutFwdArgs {
-				if putFwdArgInQueue.GId == putFwdReq.GId {
-					alreadyExists = true
-					break
-				}
-			}
-			if !alreadyExists {
-				s.pendingPutFwdArgs = append(s.pendingPutFwdArgs, putFwdReq)
-			}
-
-			util.PrintfGreen("PutProcessor Sending put forward\n")
-			putFwdErr := s.NextServerRPC.Call("ServerListener.PutForward", putFwdReq, &putFwdReply)
-			util.PrintfGreen("%s\n", "PutProcessor sent putForward\n")
-			if putFwdErr != nil {
-				util.PrintfGreen("%s\n", "PutProcessor sent putForward err 1\n")
-				s.L.Unlock()
-				util.PrintfGreen("%s\n", "PutProcessor sent putForward err 2\n")
-				// internalPutRes.err = putFwdErr
-				// internalPutReq.done <- internalPutRes
-				// util.PrintfGreen("%s\n", "PutProcessor sent putForward err 3\n")
-				continue
-			}
-			// PutForward succeeded
-			i := 0
-			for i = 0; i < len(s.pendingPutFwdArgs); i++ {
-				if s.pendingPutFwdArgs[i].GId == putFwdReply.Gid {
-					break
-				}
-			}
-			if i == 0 {
-				s.pendingPutFwdArgs = s.pendingPutFwdArgs[1:]
-			} else {
-				util.PrintfRed("Out of order put forward reply\n")
-				if i == len(s.pendingPutFwdArgs) {
-					s.pendingPutFwdArgs = s.pendingPutFwdArgs[:i]
-				} else {
-					s.pendingPutFwdArgs = append(s.pendingPutFwdArgs[:i], s.pendingPutFwdArgs[i+1:]...)
-				}
-			}
-			util.PrintfGreen("%s\n", "Unlocking in putProcessor to send PutForWard 1")
-			s.L.Unlock()
-			util.PrintfGreen("%s\n", "Unlocking in putProcessor to send PutForWard 2")
-
-		} else { // is tail or tail+head server
-			putRes := PutResult{
-				ClientId: putReq.ClientId,
-				OpId:     putReq.OpId,
-				GId:      GId,
-				Key:      putReq.Key,
-				Value:    putReq.Value,
-			}
-			putListenerRPC, ok := s.putListenerRPCMap[putReq.ClientId]
-			if !ok {
-				var putListenerConnErr error
-				putListenerRPC, putListenerConnErr = rpc.Dial("tcp", putReq.PutListenerAddr)
-				if putListenerConnErr != nil {
-					putListenerConnErr = errors.New("Error occurred connecting to PutListener: " + putListenerConnErr.Error())
-					util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", putListenerConnErr.Error())
-					return putListenerConnErr
-				}
-
-			}
-			ptrace.RecordAction(putRes)
-			putResKVS := kvslib.PutRes{
-				OpId:  putReq.OpId,
-				GId:   GId,
-				Key:   putReq.Key,
-				Token: ptrace.GenerateToken(),
-			}
-			putListenerRPC.Call("ServerListener.PutSuccess", putResKVS, nil)
-		}
-		internalPutReq.done <- internalPutRes
-		util.PrintfGreen("Put done for %v\n", putReq.OpId)
-	}
-}
-
-// When it's a Put Forward  Operation:
-//  - update the KVState
-//	- Update GId
-//  - PutFwdRecv(gid)
-// 	If this is the tailServer (doesn't have nextServer):
-// 		- PutResult(gid)
-// 		- send ack message to the source kvslib
-//	else (middle server):
-// 		- PutFwd(gid)
-//		- forward this put to the next server
-func (sl ServerListener) PutForward(arg PutFwdArg, reply *PutFwdReply) error {
-	util.PrintfGreen("PutFoward got %v\n", arg) // TODO Remove
-
-	sl.server.pausePut.Wait() // Wait until ReplaceNext is finishes handling remaining put forwards
-
-	ptrace := sl.server.tracer.ReceiveToken(arg.Token)
-
-	util.PrintfGreen("LOCK forward put with gid %v, 1\n", arg.GId)
-	sl.server.L.Lock()
-	util.PrintfGreen("LOCK forward put with gid %v, 2\n", arg.GId)
-	sl.server.KVState[arg.Key] = arg.Value
-
-	sl.server.prevPutGId = sl.server.currPutGId
-	sl.server.currPutGId = arg.GId
-
-	ptrace.RecordAction(PutFwdRecvd{
-		ClientId: arg.ClientId,
-		OpId:     arg.OpId,
-		GId:      arg.GId,
-		Key:      arg.Key,
-		Value:    arg.Value,
-	})
-	clientAndOpId := ClientAndOpId{ClientId: arg.ClientId, OpId: arg.OpId}
-	_, existsInMap := sl.server.OpMap[clientAndOpId]
-
-	if sl.server.NextServer == nil {
-		if !existsInMap {
-			sl.server.OpMap[clientAndOpId] = KeyValGId{Key: arg.Key, Value: arg.Value, GId: arg.GId}
-		} else {
-			// ignoring duplicate put requests in tail server, since it would've already been ACKed
+		/* call internal Put Asynchronously*/
+		putTrace.RecordAction(putFwd)
+		nextServ, err := rpc.Dial("tcp", s.NextServ)
+		if err != nil {
+			fmt.Printf("(PUT): from Head Serv - Can't connect to next server: " + err.Error() + " .Returning as normal, and waiting for Failure Notification")
+			*res = true
 			return nil
 		}
-		sl.server.getGIdCount = 1
-		sl.server.currGetGId = sl.server.currPutGId + sl.server.getGIdCount
+		nextServRes := new(bool)
 
-		putRes := PutResult{
-			ClientId: arg.ClientId,
-			OpId:     arg.OpId,
-			GId:      arg.GId,
-			Key:      arg.Key,
-			Value:    arg.Value,
-		}
-		ptrace.RecordAction(putRes)
-
-		putListenerRPC, ok := sl.server.putListenerRPCMap[arg.ClientId]
-		if !ok {
-			var putListenerConnErr error
-			putListenerRPC, putListenerConnErr = rpc.Dial("tcp", arg.PutListenerAddr)
-			if putListenerConnErr != nil {
-				putListenerConnErr = errors.New("Error occurred connecting to PutListener: " + putListenerConnErr.Error())
-				util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", putListenerConnErr.Error())
-				return putListenerConnErr
-			}
-
-		}
-		putListenerRPC.Call("ServerListener.PutSuccess", kvslib.PutRes{
-			OpId:  putRes.OpId,
-			GId:   putRes.GId,
-			Key:   putRes.Key,
-			Token: ptrace.GenerateToken(),
-		}, nil)
-	} else {
-		if !existsInMap {
-			ptrace.RecordAction(PutFwd{
-				ClientId: arg.ClientId,
-				OpId:     arg.OpId,
-				GId:      arg.GId,
-				Key:      arg.Key,
-				Value:    arg.Value,
-			})
-
-			sl.server.OpMap[clientAndOpId] = KeyValGId{Key: arg.Key, Value: arg.Value, GId: arg.GId}
-		}
-
-		putFwdReq := PutFwdArg{
-			ClientId:        arg.ClientId,
-			OpId:            arg.OpId,
-			GId:             arg.GId,
-			Key:             arg.Key,
-			Value:           arg.Value,
-			PutListenerAddr: arg.PutListenerAddr,
-			Token:           ptrace.GenerateToken(),
-		}
-
-		util.PrintfGreen("putForward pendingPutFwdArgs 1%v\n", sl.server.pendingPutFwdArgs) // TODO Remove
-
-		// Check if putFwd already exists in pendingPutFwdArgs, if it doesn't exist, add it
-		alreadyExists := false
-		for _, putFwdArgInQueue := range sl.server.pendingPutFwdArgs {
-			if putFwdArgInQueue.GId == putFwdReq.GId {
-				alreadyExists = true
-				break
-			}
-		}
-		if !alreadyExists {
-			sl.server.pendingPutFwdArgs = append(sl.server.pendingPutFwdArgs, putFwdReq)
-		}
-
-		util.PrintfGreen("putForward pendingPutFwdArgs 2%v\n", sl.server.pendingPutFwdArgs) // TODO Remove
-
-		var putFwdReply PutFwdReply
-		putFwdErr := sl.server.NextServerRPC.Call("ServerListener.PutForward", putFwdReq, &putFwdReply)
-		if putFwdErr != nil {
-			// TODO we should wait for replaceNext to succeed before continuing
-
-			sl.server.L.Unlock()
-			return putFwdErr
-			// FIXME Not USED
-			sl.server.waitForReplaceNext.L.Lock()
-			sl.server.waitForReplaceNext.Wait()
-			sl.server.waitForReplaceNext.L.Unlock()
-		}
-
-		// PutForward succeeded, remove the put from the list of pending puts not processed by server
-		i := 0
-		for i = 0; i < len(sl.server.pendingPutFwdArgs); i++ {
-			if sl.server.pendingPutFwdArgs[i].GId == putFwdReply.Gid {
-				break
-			}
-		}
-		if i == 0 {
-			sl.server.pendingPutFwdArgs = sl.server.pendingPutFwdArgs[1:]
-		} else {
-			util.PrintfRed("Out of order put forward reply waiting %v got gid%v\n", arg, putFwdReply.Gid) // TODO Remove
-			if i == len(sl.server.pendingPutFwdArgs) {
-				sl.server.pendingPutFwdArgs = sl.server.pendingPutFwdArgs[:i]
-			} else {
-				sl.server.pendingPutFwdArgs = append(sl.server.pendingPutFwdArgs[:i], sl.server.pendingPutFwdArgs[i+1:]...)
-			}
-
-		}
-		util.PrintfGreen("putForward pendingPutFwdArgs 3%v\n", sl.server.pendingPutFwdArgs) // TODO Remove
-	}
-
-	sl.server.L.Unlock()
-	util.PrintfGreen("Finished put forward with gid %v\n", arg.GId)
-
-	reply.Gid = arg.GId
-	return nil
-}
-
-// If it's a Get:
-//  - check if server is tail server (no NextServer), otherwise return error (KVSlib contacted non-tail server)
-// 	- trace: GetRecvd,
-//  - GIdCount += 1; GId = GIdCount
-//  - trace: GetOrdered(gid), GetResult(gid)
-//  - send the value of the key requested to the source kvslib
-func (r *Request) Get(arg kvslib.GetReq, reply *kvslib.GetRes) error {
-	done := make(chan InternalGetRes, 1)
-	r.server.getQueue <- InternalGet{getReq: arg, done: done}
-	doneStruct := <-done
-	*reply = doneStruct.getRes
-	if doneStruct.err != nil {
-		return doneStruct.err
+		putCall := nextServ.Go("Server.InternalPut", nextServReq, nextServRes, nil)
+		go closeOnDone(putCall, nextServ)
 	}
 	return nil
 }
 
-func (s *Server) getProcessor() {
+func addToCachedPuts(s *Server, item InternalPutFwd) {
+	s.putsMu.Lock()
+	if len(s.cachedPuts) > int(s.cachedPutsSize) {
+		s.cachedPuts = s.cachedPuts[1:]
+	}
+	s.cachedPuts = append(s.cachedPuts, item)
+	// fmt.Printf("(CACHED PUTS) Updated cache: %v\n", s.cachedPuts)
+	s.putsMu.Unlock()
+}
+
+func joinOnStartup(s *Server) {
+	/* setup connection to coord, receives addr of tail*/
+	coord, err := rpc.Dial("tcp", s.Config.CoordAddr)
+	defer coord.Close()
+	res := JoinRecvd{}
+
+	s.trace.RecordAction(ServerJoining{s.ServerId})
+	request := ServerInfo{s.ServerId, s.Config.ServerAddr, s.Config.ServerAddr, s.Config.ServerListenAddr, s.Config.ClientListenAddr, s.trace.GenerateToken()}
+
+	err = coord.Call("Coord.RequestServerJoin", request, &res)
+	util.CheckErr(err, "Can't connect to coord: ")
+
+	s.tracer.ReceiveToken(res.Token)
+	return
+}
+
+/* listen to see if some nodes wants to join after me*/
+func listenForServs(s *Server, serverListenAddr string) {
+	rpc.Register(s)
+
+	// Create a TCP listener that will listen on `Port`
+	tcpAddr, err := net.ResolveTCPAddr("tcp", serverListenAddr)
+	util.CheckErr(err, "Can't resolve address %s", serverListenAddr)
+
+	// Close the listener whenever we stop
+	listener, err := net.ListenTCP("tcp", tcpAddr)
+	util.CheckErr(err, "Can't listen on address %s", serverListenAddr)
+	fmt.Printf("Waiting for incoming servers...")
+	s.Accept(listener) /* Serve each server in new go routinue*/
+}
+
+func listenForCoord(s *Server, serverAddr string) {
+	rpc.Register(s)
+
+	// Create a TCP listener that will listen on `Port`
+	tcpAddr, err := net.ResolveTCPAddr("tcp", serverAddr)
+	util.CheckErr(err, "Can't resolve address %s", serverAddr)
+
+	// Close the listener whenever we stop
+	listener, err := net.ListenTCP("tcp", tcpAddr)
+	util.CheckErr(err, "Can't listen on address %s", serverAddr)
+
+	rpc.Accept(listener)
+}
+
+func listenForClient(s *Server) {
+	rpc.Register(s)
+
+	// Create a TCP listener that will listen on `Port`
+	tcpAddr, err := net.ResolveTCPAddr("tcp", s.Config.ClientListenAddr)
+	util.CheckErr(err, "Can't resolve address %s", s.Config.ClientListenAddr)
+
+	// Close the listener whenever we stop
+	listener, err := net.ListenTCP("tcp", tcpAddr)
+	util.CheckErr(err, "Can't listen on address %s", s.Config.ClientListenAddr)
+
+	s.Accept(listener) /* Serve each client in new go routinue*/
+}
+
+func (server *Server) Accept(lis net.Listener) {
 	for {
-		internalGetReq := <-s.getQueue
-		getReq := internalGetReq.getReq
-		var internalGetRes InternalGetRes
-
-		util.PrintfGreen("%s\n", "in Request.Get")
-		if s.NextServer != nil {
-			getReqErr := errors.New("Server " + string(s.serverId) + "which is not tail server, received a Get request")
-			util.PrintfRed("%s%s\n", "SHOULD NOT HAPPEN: ", getReqErr.Error())
-			internalGetRes.err = getReqErr
-			internalGetReq.done <- internalGetRes
+		conn, err := lis.Accept()
+		if err != nil {
+			fmt.Printf("Error in rpc.Serve: accept; continuing to next accept. %v\n", err.Error())
 			continue
 		}
-
-		// return nil on duplicates
-		clientAndOpId := ClientAndOpId{ClientId: getReq.ClientId, OpId: getReq.OpId}
-		_, existsInMap := s.OpMap[clientAndOpId]
-		if existsInMap {
-			util.PrintfGreen("%s\n", "in Request.Get of server, existsInMap")
-			internalGetReq.done <- internalGetRes
-			continue
-		}
-
-		gtrace := s.tracer.ReceiveToken(getReq.Token)
-		gtrace.RecordAction(GetRecvd{
-			ClientId: getReq.ClientId,
-			OpId:     getReq.OpId,
-			Key:      getReq.Key,
-		})
-
-		util.PrintfGreen("LOCK Get lock for %v, 1\n", getReq)
-		s.L.Lock()
-		util.PrintfGreen("LOCK Get lock for %v, 2\n", getReq)
-		s.getGIdCount += 1
-		s.currGetGId = s.currPutGId + (s.getGIdCount/0x1000)*0x1000 + (s.getGIdCount % 0x1000)
-		currGetGId := s.currGetGId
-		s.OpMap[clientAndOpId] = KeyValGId{Key: getReq.Key, Value: "", GId: s.currGetGId}
-		// fwd the get up the chain
-		if s.PrevServer != nil && s.PrevServerRPC != nil {
-			go s.getForwardSender()
-		}
-		s.L.Unlock()
-		util.PrintfGreen("Get lock done for %v\n", getReq)
-
-		gtrace.RecordAction(GetOrdered{
-			ClientId: getReq.ClientId,
-			OpId:     getReq.OpId,
-			GId:      currGetGId,
-			Key:      getReq.Key,
-		})
-		gtrace.RecordAction(GetResult{
-			ClientId: getReq.ClientId,
-			OpId:     getReq.OpId,
-			GId:      currGetGId,
-			Key:      getReq.Key,
-			Value:    s.KVState[getReq.Key],
-		})
-
-		internalGetRes.getRes.OpId = getReq.OpId
-		internalGetRes.getRes.GId = currGetGId
-		internalGetRes.getRes.Key = getReq.Key
-		if val, existsInMap := s.KVState[getReq.Key]; existsInMap {
-			internalGetRes.getRes.Value = val
-		} else {
-			internalGetRes.getRes.Value = ""
-		}
-		internalGetRes.getRes.Token = gtrace.GenerateToken()
-
-		internalGetRes.err = nil
-		internalGetReq.done <- internalGetRes
+		go rpc.ServeConn(conn)
 	}
 }
 
-func (s *Server) getForwardSender() {
+func getFreePort(ip string) (string, error) {
+	ip = ip + ":0"
+	addr, err := net.ResolveUDPAddr("udp", ip)
+	if err != nil {
+		return "", err
+	}
+
+	l, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return "", err
+	}
+	defer l.Close()
+	return l.LocalAddr().String(), nil
+	// return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+func startFcheck(serverAddr string, servId int, s *Server) {
+	localAddr, err := net.ResolveUDPAddr("udp", serverAddr)
+	if err != nil {
+		fmt.Printf("Could not start fcheck;failed to resolve udp addr: %v\nExiting", err.Error())
+		os.Exit(2)
+	}
+	localIp := localAddr.IP.String()
+	ipPort, err := getFreePort(localIp)
+	if err != nil {
+		fmt.Printf("Could not get free ipPort for fchecker: %v\nExiting", err)
+		os.Exit(2)
+	}
+	notifyCh, err := fchecker.Start(fchecker.StartStruct{ipPort, uint64(servId),
+		"", "", 0})
+	if err != nil {
+		fmt.Printf("fchecker could not start: %v\n", err)
+		os.Exit(2)
+	}
+
+	fmt.Println("FCHECKER: Listening for heartbeats at address: ", ipPort)
+	s.fcheckAddr = ipPort
+
 	for {
-		timer := time.NewTimer(1 * time.Second)
-		if s.PrevServerRPC == nil {
-			return
-		}
-		fwdGetRPC := s.PrevServerRPC.Go("ServerListener.GetForward", GetFwdArg{s.getGIdCount}, nil, nil)
 		select {
-		case <-fwdGetRPC.Done:
-			if fwdGetRPC.Error == nil {
-				return
-			}
-			<-timer.C // wait and resend
-			continue
-		case <-timer.C:
-			continue
+		case notify := <-notifyCh:
+			fmt.Printf("fchecker recevied a failure from the notify channel: %v\n", notify)
+			// How to handle this???
+			// fmt.Printf("Exiting")
+			// os.Exit(2)
 		}
 	}
 }
 
-func (sl *ServerListener) GetForward(arg GetFwdArg, reply *GetFwdReply) error {
-	util.PrintfGreen("LOCK %s\n", "Locking in GetForward")
-	sl.server.L.Lock()
-	sl.server.currGetGId = arg.getGidCount
-	if sl.server.PrevServer != nil { // curr server is not a head server
-		go sl.server.getForwardSender()
+// GetFcheckerAddr Coord calls this to find out the address at which fcheck is listening for heartbeats
+func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
+	if s.fcheckAddr == "" {
+		return errors.New("could not get address at which fchecker is running")
 	}
-	sl.server.L.Unlock()
-	util.PrintfGreen("LOCK %s\n", "Unlocked in GetForward")
+	*reply = s.fcheckAddr
 	return nil
 }
 
-type PutForwardAckReply struct{}
+// GetFcheckerAddr Coord calls this to find out the address at which fcheck is listening for heartbeats
+func (s *Server) SendServState(req bool, reply *InternalPutFwd) error {
+	s.putsMu.Lock()
+	if len(s.cachedPuts) > 0 {
+		last_element := len(s.cachedPuts) - 1
+		fmt.Printf("(Server Failure Protocol) Sending my last received PUT=%v to previous server\n", s.cachedPuts[last_element])
+		*reply = s.cachedPuts[last_element]
+	}
+	s.putsMu.Unlock()
+	return nil
+}
 
-func (sl *ServerListener) PutForwardAck(arg uint64, reply *PutForwardAckReply) error {
-	// arg is the gid of the putFwdAck
-	// PutForward succeeded, remove the put from the list of pending puts not processed by server
-	util.PrintfGreen("LOCK %s\n", "Locking in PutForwardAck")
-	sl.server.L.Lock()
-	i := 0
-	for i = 0; i < len(sl.server.pendingPutFwdArgs); i++ {
-		if sl.server.pendingPutFwdArgs[i].GId == arg {
+func ResendMissingPuts(otherServLastPut InternalPutFwd, s *Server, nextServ *rpc.Client) {
+
+	/* get last item from otherServCache, and find it from my cache*/
+	fmt.Printf("(Server Failure Protocol) Recieved %v as last put received from next server, calculating puts to resend\n", otherServLastPut)
+	s.putsMu.Lock()
+	for idx, element := range s.cachedPuts {
+		thisPut := PutFwd{element.ClientId, element.OpId, element.GId, element.Key, element.Value}
+		otherPut := PutFwd{otherServLastPut.ClientId, otherServLastPut.OpId, otherServLastPut.GId, otherServLastPut.Key, otherServLastPut.Value}
+		if reflect.DeepEqual(thisPut, otherPut) {
+			/* start sending elements down the queue from following index (i+1) to end (latest element)*/
+			for i := idx + 1; i < len(s.cachedPuts); i++ {
+				/* call internal Put Asynchronously*/
+				nextServRes := new(bool)
+				nextServReq := s.cachedPuts[i]
+				fmt.Printf("***\nServer Failure Protocol\n***) re-sending missing PUT %v\n", nextServReq)
+				nextServ.Call("Server.InternalPut", nextServReq, nextServRes)
+			}
 			break
 		}
 	}
-	if i == 0 {
-		sl.server.pendingPutFwdArgs = sl.server.pendingPutFwdArgs[1:]
-	} else {
-		util.PrintfRed("Out of order put forward reply\n")
-		if i == len(sl.server.pendingPutFwdArgs) {
-			sl.server.pendingPutFwdArgs = sl.server.pendingPutFwdArgs[:i]
-		} else {
-			sl.server.pendingPutFwdArgs = append(sl.server.pendingPutFwdArgs[:i], sl.server.pendingPutFwdArgs[i+1:]...)
-		}
-	}
-	sl.server.L.Unlock()
-	util.PrintfGreen("%s\n", "Unlocked in PutForwardAck")
-	return nil
+	nextServ.Close()
+	s.putsMu.Unlock()
+
 }
 
-func max(n1 uint64, n2 uint64) uint64 {
-	if n1 < n2 {
-		return n2
-	} else {
-		return n1
+// NotifyServerFailure TEMPLATE FOR SERVER FAILURE PROTOCOL BETWEEN COORD-SERVER
+// Added this to check if rpc calls are behaving as intended
+func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *NotifyServerFailureAck) error {
+	fmt.Println("Received server failure notification for server with id: ", notification.FailedServerId)
+
+	// trace action
+	cTrace := s.tracer.ReceiveToken(notification.Token)
+	for _, servId := range notification.FailedServerId {
+		cTrace.RecordAction(ServerFailRecvd{FailedServerId: servId})
 	}
+
+	if s.ServerId == notification.PrevServer.ServerId {
+		fmt.Println("I'm the new head server...")
+
+		s.PrevServ = ""
+
+		// trace action
+		for _, servId := range notification.FailedServerId {
+			cTrace.RecordAction(ServerFailHandled{servId})
+		}
+		*reply = NotifyServerFailureAck{ServerId: s.ServerId, Token: cTrace.GenerateToken()}
+		return nil
+	}
+	if s.ServerId == notification.NextServer.ServerId {
+		fmt.Println("I'm the new tail server...")
+		s.NextServ = ""
+
+		s.gIdMutex.Lock()
+		s.LocalGId += s.TailFailureGId_K 
+		s.gIdMutex.Unlock()
+
+		// trace action
+		for _, servId := range notification.FailedServerId {
+			cTrace.RecordAction(ServerFailHandled{servId})
+		}
+		*reply = NotifyServerFailureAck{ServerId: s.ServerId, Token: cTrace.GenerateToken()}
+
+		return nil
+	}
+	if notification.NextServer.ServerId != 0 {
+		s.NextServ = notification.NextServer.ServerListenAddr
+		fmt.Println("My next server should now be server ", notification.NextServer.ServerId)
+		/* Send my state to next server...*/
+
+		conn, err := rpc.Dial("tcp", notification.NextServer.ServerListenAddr)
+		if err != nil {
+			return errors.New("(Server failure protocol) Can't connect to next server.." + err.Error())
+		}
+
+		res := InternalPutFwd{}
+		err = conn.Call("Server.SendServState", false, &res)
+		if err != nil {
+			return errors.New("(Server failure protocol) Error from retrieving state from next server.." + err.Error())
+		}
+		// Q: should server block until restore completes to take incoming PUT/GET requests?
+		go ResendMissingPuts(res, s, conn)
+
+		// trace action
+		cTrace.RecordAction(NewFailoverSuccessor{NewNextServerId: notification.NextServer.ServerId})
+		for _, servId := range notification.FailedServerId {
+			cTrace.RecordAction(ServerFailHandled{servId})
+		}
+
+		*reply = NotifyServerFailureAck{ServerId: s.ServerId, Token: cTrace.GenerateToken()}
+		return nil
+	}
+	if notification.PrevServer.ServerId != 0 {
+		s.PrevServ = notification.PrevServer.ServerListenAddr
+		fmt.Println("My prev server should now be server ", notification.PrevServer.ServerId)
+
+		// trace action
+		cTrace.RecordAction(NewFailoverPredecessor{NewPrevServerId: notification.PrevServer.ServerId})
+		for _, servId := range notification.FailedServerId {
+			cTrace.RecordAction(ServerFailHandled{servId})
+		}
+
+		*reply = NotifyServerFailureAck{ServerId: s.ServerId, Token: cTrace.GenerateToken()}
+		return nil
+	}
+	return errors.New("invalid notification msg")
+}
+
+func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serverServerAddr string, serverListenAddr string, clientListenAddr string, strace *tracing.Tracer) error {
+	/* initalize global server state*/
+	s.ServerId = serverId
+	s.Config = Addr{CoordAddr: coordAddr, ServerAddr: serverAddr, ServerListenAddr: serverListenAddr, ClientListenAddr: clientListenAddr}
+	s.trace = strace.CreateTrace()
+	s.tracer = strace
+	s.Map = make(map[string]string)
+	s.LocalGId = 0
+	s.HeadGId_K = 10000
+	s.TailFailureGId_K = 1000
+	s.cachedPuts = make([]InternalPutFwd, 0)
+	s.cachedPutsSize = 256
+	joinComplete = make(chan bool)
+	// joinComplete = false
+
+	go startFcheck(serverAddr, int(serverId), s)
+
+	s.trace.RecordAction(ServerStart{serverId})
+	go listenForCoord(s, serverAddr)
+	joinOnStartup(s)
+	<-joinComplete
+	// for {
+	// 	if joinComplete {
+	// 		break
+	// 	}
+	// }
+
+	// /* After join process complete, let's listen if other servers wants to join*/
+	go listenForServs(s, serverListenAddr)
+
+	listenForClient(s)
+
+	return nil
 }
