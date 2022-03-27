@@ -2,7 +2,7 @@
   "ClientAPIListenAddr": "127.0.0.1:23001",
   "ServerAPIListenAddr": "127.0.0.1:23002",
   "LostMsgsThresh": 3,
-  "NumServers": 4,
+  "NumServers": 3,
   "TracingServerAddr": "127.0.0.1:23000",
   "Secret": "",
   "TracingIdentity": "coord"

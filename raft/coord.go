@@ -77,16 +77,16 @@ type Coord struct {
 	// added for debugging purposes
 	HeadServer ServerInfo
 	// added for debugging purposes
-	TailServer ServerInfo
-	// added for debugging purposes
-	ServerIdOrder            uint8
+	TailServer               ServerInfo
 	queuedServerJoinRequests []ServerInfo
 	numJoinRequests          uint8
-	ServerChainView          []ServerInfo
+	ServerClusterView        []ServerInfo
 	BeginQueuedJoinReq       bool
 	Trace                    *tracing.Trace
 	Tracer                   *tracing.Tracer
 	ClientContactAddr        string
+	TermNumber               uint8
+	Leader                   ServerInfo
 }
 
 type ServerInfo struct {
@@ -104,8 +104,10 @@ type ServerJoinAck struct {
 }
 
 type JoinResponse struct {
-	ServerId   uint8
-	TailServer ServerInfo
+	ServerId uint8
+	Leader   bool
+	Peers    []ServerInfo
+	Term     uint8
 }
 
 type HeadTailServerRequest struct {
@@ -152,20 +154,20 @@ func (c *ClientLearnServers) GetHeadTailServer(request HeadTailServerRequest, re
 	if request.Type == "head" {
 		ktracer := c.coord.Tracer.ReceiveToken(request.Token)
 		ktracer.RecordAction(HeadReqRecvd{ClientId: request.ClientId})
-		serverId := c.coord.ServerChainView[0].ServerId
+		serverId := c.coord.ServerClusterView[0].ServerId
 
 		ktracer.RecordAction(HeadRes{ClientId: request.ClientId, ServerId: serverId})
-		*reply = HeadTailServerReply{HeadServerAddress: c.coord.ServerChainView[0].ClientListenAddr,
+		*reply = HeadTailServerReply{HeadServerAddress: c.coord.ServerClusterView[0].ClientListenAddr,
 			TailServerAddress: "", ServerId: serverId, Token: ktracer.GenerateToken()}
 	} else if request.Type == "tail" {
 		ktracer := c.coord.Tracer.ReceiveToken(request.Token)
 		ktracer.RecordAction(TailReqRecvd{ClientId: request.ClientId})
-		tailServerIdx := len(c.coord.ServerChainView) - 1
-		serverId := c.coord.ServerChainView[tailServerIdx].ServerId
+		tailServerIdx := len(c.coord.ServerClusterView) - 1
+		serverId := c.coord.ServerClusterView[tailServerIdx].ServerId
 
 		ktracer.RecordAction(TailRes{ClientId: request.ClientId, ServerId: serverId})
 		*reply = HeadTailServerReply{HeadServerAddress: "",
-			TailServerAddress: c.coord.ServerChainView[tailServerIdx].ClientListenAddr, ServerId: serverId, Token: ktracer.GenerateToken()}
+			TailServerAddress: c.coord.ServerClusterView[tailServerIdx].ClientListenAddr, ServerId: serverId, Token: ktracer.GenerateToken()}
 
 	} else {
 		return errors.New("could not recognize request type: " + request.Type + ". request type has to be head or tail")
@@ -261,14 +263,37 @@ func (c *Coord) GetClientListenAddr(request string, reply *bool) error {
 	return nil
 }
 
+func joinProtocolNotifyServer(c *Coord, i int, joinResponse JoinResponse) {
+	v := c.ServerClusterView[i]
+	client, err := rpc.Dial("tcp", v.CoordListenAddr)
+	if err != nil {
+		fmt.Println("(MAIN) Could not contact server during join process. exiting")
+		os.Exit(1)
+	}
+
+	serverAck := ServerJoinAck{}
+	err = client.Call("Server.FindServerStateOnStartup", joinResponse, &serverAck)
+	if err != nil {
+		fmt.Printf("Error received when waiting for ack from server join protocol %v; Exiting", err.Error())
+		os.Exit(1)
+	}
+
+	strace := c.Tracer.ReceiveToken(serverAck.Token)
+	strace.RecordAction(ServerJoinedRecvd{serverAck.ServerId})
+	err = client.Call("Server.JoinDoneReturnTokenTrace", TokenRequest{strace.GenerateToken()}, nil)
+	if err != nil {
+		fmt.Printf("Error received when sending token back to server from server join protocol%v; Exiting", err.Error())
+		os.Exit(1)
+	}
+}
+
 func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lostMsgsThresh uint8, numServers uint8, ctracer *tracing.Tracer) error {
 	c.Trace.RecordAction(CoordStart{})
 
 	// configuring initial state of coord
 	c.NumServers = numServers
 	c.queuedServerJoinRequests = make([]ServerInfo, 0)
-	c.ServerChainView = make([]ServerInfo, 0)
-	c.ServerIdOrder = 0
+	c.ServerClusterView = make([]ServerInfo, 0)
 	c.Tracer = ctracer
 
 	if err := startListeningForServers(serverAPIListenAddr, c); err != nil {
@@ -282,77 +307,44 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 
 	for {
 		if c.BeginQueuedJoinReq {
-			fmt.Println("Initiate resolution for queued join requests")
-			if len(c.ServerChainView) == int(c.NumServers) && len(c.queuedServerJoinRequests) == 0 {
-				// c.BeginQueuedJoinReq = false
-				joinCompleted = true
-				break
-			}
+			fmt.Println("starting to resolve queued join requests")
 
 			sort.Slice(c.queuedServerJoinRequests, func(i, j int) bool {
 				return c.queuedServerJoinRequests[i].ServerId < c.queuedServerJoinRequests[j].ServerId
 			})
 			fmt.Printf("Queued requests: %v\n", c.queuedServerJoinRequests)
 
-			for _, v := range c.queuedServerJoinRequests {
-				if c.ServerIdOrder+1 == v.ServerId {
-					c.ServerIdOrder++
-					if v.ServerId == 1 {
-						c.HeadServer = v
-						c.TailServer = v
-					}
-					prevTailServer := c.TailServer
-					client, err := rpc.Dial("tcp", v.CoordListenAddr)
-					if err != nil {
-						fmt.Println("(MAIN) Could not contact server during join process. exiting")
-						os.Exit(1)
-					}
-					serverAck := ServerJoinAck{}
-					err = client.Call("Server.FindTailServer", JoinResponse{
-						ServerId:   v.ServerId,
-						TailServer: prevTailServer,
-					}, &serverAck)
-					if err != nil {
-						fmt.Printf("Error received when waiting for ack from server join protocol %v; Exiting", err.Error())
-						os.Exit(1)
-					}
-					strace := c.Tracer.ReceiveToken(serverAck.Token)
-					strace.RecordAction(ServerJoinedRecvd{v.ServerId})
-					err = client.Call("Server.JoinDoneReturnTokenTrace", TokenRequest{strace.GenerateToken()}, nil)
-					if err != nil {
-						fmt.Printf("Error received when sending token back to server from server join protocol%v; Exiting", err.Error())
-						os.Exit(1)
-					}
-					if serverAck.ServerId == v.ServerId {
-						c.ServerChainView = append(c.ServerChainView, v)
-						fmt.Printf("(MAIN) Updated server chain view: %v\n", c.ServerChainView)
-						c.TailServer = v
+			c.ServerClusterView = c.queuedServerJoinRequests
+			c.Leader = c.ServerClusterView[0]
 
-						// trace the chain view
-						newChainTrace := NewChain{}
-						newChainTrace.Chain = make([]uint8, len(c.ServerChainView))
-						for i, v := range c.ServerChainView {
-							newChainTrace.Chain[i] = v.ServerId
-						}
-						c.Trace.RecordAction(newChainTrace)
-					} else {
-						fmt.Println("(MAIN) WARNING: Recevied invalid ack request during server join Protocol")
-						fmt.Printf("(MAIN) Expected server-id: %v; got server-id: %v\n", v.ServerId, serverAck.ServerId)
-						os.Exit(1)
-					}
-					c.queuedServerJoinRequests = c.queuedServerJoinRequests[1:]
-				} else {
-					fmt.Printf("(MAIN) WARNING: Expected server Ids to be in order. Expected %v; got %v\n", c.ServerIdOrder+1, v.ServerId)
-					fmt.Println("Exiting")
-					os.Exit(1)
+			for i := 1; i < len(c.ServerClusterView); i++ {
+				v := c.ServerClusterView[i]
+				followerJoinResponse := JoinResponse{
+					ServerId: v.ServerId,
+					Leader:   false,
+					Peers:    c.ServerClusterView,
+					Term:     1,
 				}
+				joinProtocolNotifyServer(c, i, followerJoinResponse)
 			}
+
+			leaderJoinResponse := JoinResponse{
+				ServerId: c.Leader.ServerId,
+				Leader:   true,
+				Peers:    c.ServerClusterView,
+				Term:     1,
+			}
+			joinProtocolNotifyServer(c, 0, leaderJoinResponse)
+			joinCompleted = true
+			break
 		}
 	}
 
 	// join process should be complete at this point
 	if joinCompleted {
 		c.Trace.RecordAction(AllServersJoined{})
+		fmt.Printf("Join process completed; Leader is %v\n", c.Leader)
+		fmt.Printf("serverClusterView: %v\n", c.ServerClusterView)
 	}
 
 	// server addresses at which fcheck is listening for heartbeats
@@ -360,7 +352,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	// coord addresses at which fcheck is running
 	localFcheckAddrMap := make(map[uint8]string)
 
-	for _, server := range c.ServerChainView {
+	for _, server := range c.ServerClusterView {
 		client, err := rpc.Dial("tcp", server.CoordListenAddr)
 		if err != nil {
 			fmt.Println("(MAIN) Could not contact server during while trying to get fcheck addr. exiting")
@@ -507,16 +499,16 @@ func resolveHeadServerFailures(c *Coord, errorStack *string, concurrentServerFai
 	}
 
 	serverIdx := -1
-	for i, v := range c.ServerChainView {
+	for i, v := range c.ServerClusterView {
 		if v.ServerId == nextHeadServer.ServerId {
 			serverIdx = i
 			break
 		}
 	}
-	c.ServerChainView = c.ServerChainView[serverIdx:]
-	fmt.Println("updated serverChainView: ", c.ServerChainView)
-	c.HeadServer = c.ServerChainView[0]
-	c.TailServer = c.ServerChainView[len(c.ServerChainView)-1]
+	c.ServerClusterView = c.ServerClusterView[serverIdx:]
+	fmt.Println("updated serverChainView: ", c.ServerClusterView)
+	c.HeadServer = c.ServerClusterView[0]
+	c.TailServer = c.ServerClusterView[len(c.ServerClusterView)-1]
 
 	// trace serverFailHandledReceived
 	c.Trace = c.Tracer.ReceiveToken(notifyServerFailureAck.Token)
@@ -543,8 +535,8 @@ func resolveHeadServerFailures(c *Coord, errorStack *string, concurrentServerFai
 
 	// trace the chain view
 	newChainTrace := NewChain{}
-	newChainTrace.Chain = make([]uint8, len(c.ServerChainView))
-	for i, v := range c.ServerChainView {
+	newChainTrace.Chain = make([]uint8, len(c.ServerClusterView))
+	for i, v := range c.ServerClusterView {
 		newChainTrace.Chain[i] = v.ServerId
 	}
 	c.Trace.RecordAction(newChainTrace)
@@ -565,7 +557,7 @@ func resolveHeadServerFailures(c *Coord, errorStack *string, concurrentServerFai
 
 func resolveTailServerFailures(c *Coord, errorStack *string, failedServerId uint8, concurrentServerFailures map[uint8]bool) bool {
 	failedServerIdx := -1
-	for i, v := range c.ServerChainView {
+	for i, v := range c.ServerClusterView {
 		if v.ServerId == failedServerId {
 			failedServerIdx = i
 			break
@@ -606,16 +598,16 @@ func resolveTailServerFailures(c *Coord, errorStack *string, failedServerId uint
 	}
 
 	serverIdx := -1
-	for i, v := range c.ServerChainView {
+	for i, v := range c.ServerClusterView {
 		if v.ServerId == nextTailServer.ServerId {
 			serverIdx = i
 			break
 		}
 	}
-	c.ServerChainView = c.ServerChainView[:serverIdx+1]
-	fmt.Println("updated serverChainView: ", c.ServerChainView)
-	c.HeadServer = c.ServerChainView[0]
-	c.TailServer = c.ServerChainView[len(c.ServerChainView)-1]
+	c.ServerClusterView = c.ServerClusterView[:serverIdx+1]
+	fmt.Println("updated serverChainView: ", c.ServerClusterView)
+	c.HeadServer = c.ServerClusterView[0]
+	c.TailServer = c.ServerClusterView[len(c.ServerClusterView)-1]
 
 	// trace the ServerFailHandledReceived
 	c.Trace = c.Tracer.ReceiveToken(notifyServerFailureAck.Token)
@@ -642,8 +634,8 @@ func resolveTailServerFailures(c *Coord, errorStack *string, failedServerId uint
 
 	// trace the chain view
 	newChainTrace := NewChain{}
-	newChainTrace.Chain = make([]uint8, len(c.ServerChainView))
-	for i, v := range c.ServerChainView {
+	newChainTrace.Chain = make([]uint8, len(c.ServerClusterView))
+	for i, v := range c.ServerClusterView {
 		newChainTrace.Chain[i] = v.ServerId
 	}
 	c.Trace.RecordAction(newChainTrace)
@@ -663,7 +655,7 @@ func resolveTailServerFailures(c *Coord, errorStack *string, failedServerId uint
 
 func resolveintermediateServerFailures(c *Coord, errorStack *string, failedServerId uint8, concurrentServerFailures map[uint8]bool) bool {
 	failedServerIdx := -1
-	for i, v := range c.ServerChainView {
+	for i, v := range c.ServerClusterView {
 		if v.ServerId == failedServerId {
 			failedServerIdx = i
 			break
@@ -750,28 +742,28 @@ func resolveintermediateServerFailures(c *Coord, errorStack *string, failedServe
 	// received ack from both servers; update serverChainView
 	lidx := -1
 	ridx := -1
-	for i, v := range c.ServerChainView {
+	for i, v := range c.ServerClusterView {
 		if v.ServerId == leftAdjacentServer.ServerId {
 			lidx = i
 			break
 		}
 	}
-	for i, v := range c.ServerChainView {
+	for i, v := range c.ServerClusterView {
 		if v.ServerId == rightAdjacentServer.ServerId {
 			ridx = i
 			break
 		}
 	}
 	if leftAdjacentServer.ServerId != 0 && rightAdjacentServer.ServerId != 0 {
-		c.ServerChainView = append(c.ServerChainView[:lidx+1], c.ServerChainView[ridx:]...)
+		c.ServerClusterView = append(c.ServerClusterView[:lidx+1], c.ServerClusterView[ridx:]...)
 	} else if leftAdjacentServer.ServerId == 0 {
-		c.ServerChainView = c.ServerChainView[ridx:]
+		c.ServerClusterView = c.ServerClusterView[ridx:]
 	} else {
-		c.ServerChainView = c.ServerChainView[:lidx+1]
+		c.ServerClusterView = c.ServerClusterView[:lidx+1]
 	}
-	fmt.Println("updated serverChainView: ", c.ServerChainView)
-	c.HeadServer = c.ServerChainView[0]
-	c.TailServer = c.ServerChainView[len(c.ServerChainView)-1]
+	fmt.Println("updated serverChainView: ", c.ServerClusterView)
+	c.HeadServer = c.ServerClusterView[0]
+	c.TailServer = c.ServerClusterView[len(c.ServerClusterView)-1]
 
 	// trace the ServerFailHandledReceived
 	for i := 0; i < len(allAdjFailures); i++ {
@@ -821,8 +813,8 @@ func resolveintermediateServerFailures(c *Coord, errorStack *string, failedServe
 
 	// trace the chain view
 	newChainTrace := NewChain{}
-	newChainTrace.Chain = make([]uint8, len(c.ServerChainView))
-	for i, v := range c.ServerChainView {
+	newChainTrace.Chain = make([]uint8, len(c.ServerClusterView))
+	for i, v := range c.ServerClusterView {
 		newChainTrace.Chain[i] = v.ServerId
 	}
 	c.Trace.RecordAction(newChainTrace)
@@ -834,10 +826,10 @@ func resolveintermediateServerFailures(c *Coord, errorStack *string, failedServe
 func findNewPrev(c *Coord, errorStack *string, failedServerIdx int, concurrentServerFailures map[uint8]bool) (ServerInfo, []uint8) {
 	availableServer := ServerInfo{}
 	multipleAdjFailures := make(map[uint8]bool)
-	multipleAdjFailures[c.ServerChainView[failedServerIdx].ServerId] = true
+	multipleAdjFailures[c.ServerClusterView[failedServerIdx].ServerId] = true
 
 	for i := failedServerIdx - 1; i >= 0; i-- {
-		serverToContact := c.ServerChainView[i]
+		serverToContact := c.ServerClusterView[i]
 
 		if _, err := rpc.Dial("tcp", serverToContact.CoordListenAddr); err != nil {
 			fmt.Printf("Could not contact server during server failure protocol: %v\n Marking this server as offline.\n", err.Error())
@@ -846,7 +838,7 @@ func findNewPrev(c *Coord, errorStack *string, failedServerIdx int, concurrentSe
 				multipleAdjFailures[serverToContact.ServerId] = true
 			}
 			concurrentServerFailures[serverToContact.ServerId] = true
-			fmt.Println("Trying to look for next available server in the chain: ", c.ServerChainView)
+			fmt.Println("Trying to look for next available server in the chain: ", c.ServerClusterView)
 			continue
 		} else {
 			// server seems to be online. Send failure notification
@@ -856,7 +848,7 @@ func findNewPrev(c *Coord, errorStack *string, failedServerIdx int, concurrentSe
 	}
 
 	if availableServer.ServerId == 0 {
-		*errorStack += "could not find any online server to the left of server " + strconv.Itoa(int(c.ServerChainView[failedServerIdx].ServerId))
+		*errorStack += "could not find any online server to the left of server " + strconv.Itoa(int(c.ServerClusterView[failedServerIdx].ServerId))
 	}
 
 	keys := make([]uint8, len(multipleAdjFailures))
@@ -873,10 +865,10 @@ func findNewPrev(c *Coord, errorStack *string, failedServerIdx int, concurrentSe
 func findNewNext(c *Coord, errorStack *string, failedServerIdx int, concurrentServerFailures map[uint8]bool) (ServerInfo, []uint8) {
 	availableServer := ServerInfo{}
 	multipleAdjFailures := make(map[uint8]bool)
-	multipleAdjFailures[c.ServerChainView[failedServerIdx].ServerId] = true
+	multipleAdjFailures[c.ServerClusterView[failedServerIdx].ServerId] = true
 
-	for i := failedServerIdx + 1; i < len(c.ServerChainView); i++ {
-		serverToContact := c.ServerChainView[i]
+	for i := failedServerIdx + 1; i < len(c.ServerClusterView); i++ {
+		serverToContact := c.ServerClusterView[i]
 
 		if _, err := rpc.Dial("tcp", serverToContact.CoordListenAddr); err != nil {
 			fmt.Printf("Could not contact server during server failure protocol: %v\n Marking this server as offline.\n", err.Error())
@@ -885,7 +877,7 @@ func findNewNext(c *Coord, errorStack *string, failedServerIdx int, concurrentSe
 				multipleAdjFailures[serverToContact.ServerId] = true
 			}
 			concurrentServerFailures[serverToContact.ServerId] = true
-			fmt.Println("Trying to look for next available server in the chain: ", c.ServerChainView)
+			fmt.Println("Trying to look for next available server in the chain: ", c.ServerClusterView)
 			continue
 		} else {
 			// server seems to be online. Send failure notification
@@ -894,7 +886,7 @@ func findNewNext(c *Coord, errorStack *string, failedServerIdx int, concurrentSe
 		}
 	}
 	if availableServer.ServerId == 0 {
-		*errorStack += "could not find any online server to the right of server " + strconv.Itoa(int(c.ServerChainView[failedServerIdx].ServerId))
+		*errorStack += "could not find any online server to the right of server " + strconv.Itoa(int(c.ServerClusterView[failedServerIdx].ServerId))
 	}
 
 	keys := make([]uint8, len(multipleAdjFailures))
