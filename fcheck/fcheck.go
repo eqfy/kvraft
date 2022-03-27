@@ -1,21 +1,28 @@
 /*
-This package specifies the API to the failure checking library for
-UBC CS 416 2021W2.
+
+This package specifies the API to the failure checking library to be
+used in assignment 2 of UBC CS 416 2021W2.
+
+You are *not* allowed to change the API below. For example, you can
+modify this file by adding an implementation to Stop, but you cannot
+change its API.
+
 */
 
-package fcheck
+package fchecker
 
 import (
 	"bytes"
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"math"
 	"net"
+	"os"
+	"strconv"
 	"sync"
-	"time"
-
-	"cs.ubc.ca/cpsc416/a3/util"
 )
+import "time"
 
 ////////////////////////////////////////////////////// DATA
 // Define the message types fchecker has to use to communicate to other
@@ -39,6 +46,7 @@ type AckMessage struct {
 type FailureDetected struct {
 	UDPIpPort string    // The RemoteIP:RemotePort of the failed node.
 	Timestamp time.Time // The time when the failure was detected.
+	ServerId  uint8
 }
 
 ////////////////////////////////////////////////////// API
@@ -51,351 +59,411 @@ type StartStruct struct {
 	LostMsgThresh                uint8
 }
 
-////////////////////////////////////////////////////// Custom
-var stopMonitorCh = make(chan bool, 1)
-var stopAckCh = make(chan bool, 1)
-var allStopWg = sync.WaitGroup{}
-
-type hBeatAckReadMsg struct {
-	raddr *net.UDPAddr
-	msg   *HBeatMessage
+type StartMonitoringConfig struct {
+	RemoteServerAddr map[uint8]string
+	LocalAddr        map[uint8]string
+	LostMsgThresh    uint8
 }
 
-type hBeatAckWriteMsg struct {
-	raddr *net.UDPAddr
-	msg   *AckMessage
+type routineTerminateInfo struct {
+	nonce     uint64
+	terminate bool
 }
+
+// var terminateFcheck bool = false
+var routinesList = make([]routineTerminateInfo, 0)
+var mu sync.Mutex
+
+var ackRoutinesList = make([]routineTerminateInfo, 0)
+var ackMu sync.Mutex
 
 // Starts the fcheck library.
 
 func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
+	failureChan := make(chan FailureDetected)
 	if arg.HBeatLocalIPHBeatLocalPort == "" {
 		// ONLY arg.AckLocalIPAckLocalPort is set
-		//
 		// Start fcheck without monitoring any node, but responding to heartbeats.
 
-		_, err := setupHBeatAck(arg.AckLocalIPAckLocalPort)
-		if err != nil {
-			return nil, err
+		laddr, monitorErr := net.ResolveUDPAddr("udp", arg.AckLocalIPAckLocalPort)
+		if monitorErr != nil {
+			return nil, errors.New("Failed to set monitored mode; could not resolve address:" + err.Error())
 		}
-		allStopWg.Add(3)
-		return nil, nil
-	}
-	// Else: ALL fields in arg are set
-	// Start the fcheck library by monitoring a single node and
-	// also responding to heartbeats.
 
-	notifyChFull := make(chan FailureDetected)
-	err = setupHBeatMonitor(arg, notifyChFull)
-	if err != nil {
-		return nil, err
-	}
+		monitorConn, listenUdpErr := net.ListenUDP("udp", laddr)
+		if listenUdpErr != nil {
+			return nil, errors.New("Failed to listen udp for monitored node" + listenUdpErr.Error())
+		}
 
-	_, err = setupHBeatAck(arg.AckLocalIPAckLocalPort)
-	if err != nil {
-		return nil, err
+		ackMu.Lock()
+		ackRoutinesList = append(ackRoutinesList, routineTerminateInfo{nonce: arg.EpochNonce, terminate: false})
+		ackMu.Unlock()
+		fmt.Println(ackRoutinesList)
+
+		go func(routineSpecificNonce uint64) {
+			defer monitorConn.Close()
+			for {
+
+				for i := range ackRoutinesList {
+					if ackRoutinesList[i].nonce == routineSpecificNonce && ackRoutinesList[i].terminate == true {
+						// monitorConn.Close()
+						fmt.Println("exiting go routine with nonce: " + strconv.FormatUint(arg.EpochNonce, 10))
+						ackMu.Lock()
+						if len(ackRoutinesList) > 0 {
+							ackRoutinesList = ackRoutinesList[1:]
+						}
+						ackMu.Unlock()
+						return
+					}
+				}
+
+				buf := make([]byte, 1024)
+				rlen, remote, readErr := monitorConn.ReadFromUDP(buf[:])
+				if readErr != nil {
+					fmt.Println("WARNING: could not read from udp: ", readErr.Error())
+				}
+				receivedHeartBeat, decodeErr := decodeHeartbeat(buf, rlen)
+				if decodeErr != nil {
+					fmt.Println("WARNING: Failed to decode HBeat packet received from server: ", decodeErr.Error())
+				} else {
+					if receivedHeartBeat.SeqNum%45 == 0 {
+						fmt.Println("Received heartbeat: ", receivedHeartBeat)
+						fmt.Println("sending ack to", remote.String())
+					}
+					select {
+					case <-time.After(time.Millisecond * 300):
+						ack := AckMessage{receivedHeartBeat.EpochNonce, receivedHeartBeat.SeqNum}
+						if _, err := monitorConn.WriteTo(encodeAck(&ack), remote); err != nil {
+							fmt.Println("WARNING: could not send ack msg to: ", remote.String())
+						}
+					}
+				}
+			}
+		}(arg.EpochNonce)
+
+	} else {
+		// Else: ALL fields in arg are set
+		// Start the fcheck library by monitoring a single node and
+		// also responding to heartbeats.
+		fmt.Println("Nonce: ", arg.EpochNonce, "; Server: ", arg.HBeatRemoteIPHBeatRemotePort)
+
+		localAddr, err := net.ResolveUDPAddr("udp", arg.HBeatLocalIPHBeatLocalPort)
+		if err != nil {
+			return nil, errors.New("could not resolve HBeatLocalIPHBeatLocalPort:" + err.Error())
+		}
+
+		remoteAddr, err := net.ResolveUDPAddr("udp", arg.HBeatRemoteIPHBeatRemotePort)
+		if err != nil {
+			return nil, errors.New("could not resolve UDP address: " + err.Error())
+		}
+
+		conn, err := net.DialUDP("udp", localAddr, remoteAddr)
+		if err != nil {
+			return nil, errors.New("could not dial UDP: " + err.Error())
+		}
+
+		fmt.Println("starting go routine with epoch " + strconv.FormatUint(arg.EpochNonce, 10))
+		mu.Lock()
+		routinesList = append(routinesList, routineTerminateInfo{nonce: arg.EpochNonce, terminate: false})
+		mu.Unlock()
+		fmt.Println(routinesList)
+		go func(routineSpecificNonce uint64) {
+
+			continueSendReceive := true
+			var unackedHeartBeats = map[int]time.Time{}
+
+			fname := "./LOGS-FCHECK-" + strconv.FormatUint(arg.EpochNonce, 10)
+			f, fileErr := os.Create(fname)
+			check(fileErr)
+			defer f.Close()
+
+			rtt := time.Second * 3
+			newRtt := rtt
+			var retransmissionDuration time.Duration = 0
+			lostMsgs := 0
+			seqNum := 0
+
+			for {
+
+				for i := range routinesList {
+					if routinesList[i].nonce == routineSpecificNonce && routinesList[i].terminate == true {
+						conn.Close()
+						fmt.Println("exiting go routine with nonce: " + strconv.FormatUint(arg.EpochNonce, 10))
+						for k := range unackedHeartBeats {
+							delete(unackedHeartBeats, k)
+						}
+						mu.Lock()
+						if len(routinesList) > 0 {
+							routinesList = routinesList[1:]
+						}
+						mu.Unlock()
+						return
+					}
+				}
+
+				if continueSendReceive {
+					heartBeat := HBeatMessage{
+						EpochNonce: arg.EpochNonce,
+						SeqNum:     uint64(seqNum),
+					}
+
+					var heartBeatSentTime time.Time
+					if _, err := f.WriteString("retransmission time for seq num " + strconv.FormatInt(int64(seqNum), 10) + ": " + retransmissionDuration.String() + "\n"); err != nil {
+						check(err)
+					}
+					f.Sync()
+					// fmt.Println("retransmission time for seq num " + strconv.FormatInt(int64(seqNum), 10) + ": " + retransmissionDuration.String())
+					// SENDING HEARTBEAT
+					select {
+					case <-time.After(retransmissionDuration):
+						rtt = newRtt
+						if _, err := f.WriteString("rtt value: " + rtt.String() + "\n"); err != nil {
+							check(err)
+						}
+						f.Sync()
+						//fmt.Println("rtt value: " + rtt.String())
+						heartBeatSentTime = time.Now()
+						unackedHeartBeats[seqNum] = heartBeatSentTime
+						if _, err := conn.Write(encode(&heartBeat)); err != nil {
+							fmt.Println("udp write failed: " + err.Error())
+						}
+						if _, err := f.WriteString("heartbeat sent at time: " + heartBeatSentTime.String() + "\n"); err != nil {
+							check(err)
+						}
+						f.Sync()
+						// fmt.Println("heartbeat sent at time: " + heartBeatSentTime.String())
+					}
+
+					// RECEIVE ACK CODE STARTS
+					recvBuf := make([]byte, 1024)
+					conn.SetReadDeadline(time.Now().Add(rtt))
+					fromUDP, _, err := conn.ReadFromUDP(recvBuf)
+					ackReceivedTime := time.Now()
+					if err != nil {
+						if _, err := f.WriteString("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10) + "\n"); err != nil {
+							check(err)
+						}
+						f.Sync()
+						//fmt.Println("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10))
+						retransmissionDuration = 0
+						lostMsgs++
+						if uint8(lostMsgs) == arg.LostMsgThresh {
+							if _, err := f.WriteString("sending failure info to failureChannel for routine with nonce " + strconv.FormatUint(routineSpecificNonce, 10) + "\n"); err != nil {
+								check(err)
+							}
+							f.Sync()
+							failureChan <- FailureDetected{UDPIpPort: arg.HBeatRemoteIPHBeatRemotePort, Timestamp: time.Now()}
+							continueSendReceive = false
+						}
+					} else {
+						decoded, err := decode(recvBuf, fromUDP)
+						if err != nil {
+							fmt.Println("could not decode server packet: " + err.Error())
+						} else {
+							_, ok := unackedHeartBeats[int(decoded.HBEatSeqNum)]
+							if ok && decoded.HBEatEpochNonce == arg.EpochNonce {
+								estimatedRtt := ackReceivedTime.Sub(unackedHeartBeats[int(decoded.HBEatSeqNum)])
+								retransmissionDuration = time.Duration(math.Abs(float64(rtt - estimatedRtt)))
+								if _, err := f.WriteString("Received ack; seq num: " + strconv.FormatUint(decoded.HBEatSeqNum, 10) + "; estimated rtt for this ack: " + estimatedRtt.String() + "\n"); err != nil {
+									check(err)
+								}
+								f.Sync()
+								// fmt.Println("Received ack; seq num: " + strconv.FormatUint(decoded.HBEatSeqNum, 10) + "; estimated rtt for this ack: " + estimatedRtt.String())
+								delete(unackedHeartBeats, int(decoded.HBEatSeqNum))
+								newRtt = (estimatedRtt + rtt) / 2
+								if _, err := f.WriteString("New RTT: " + newRtt.String() + "\n\n\n"); err != nil {
+									check(err)
+								}
+								f.Sync()
+								// .Println("New RTT: " + newRtt.String())
+								// fmt.Printf("\n\n")
+								if lostMsgs > 0 {
+									lostMsgs = 0
+								}
+							} else {
+								fmt.Println("received invalid ack; seq num or nonce does not match: ", decoded)
+								fmt.Println("args received from client: ", arg)
+							}
+						}
+					}
+					seqNum++
+				}
+			}
+		}(arg.EpochNonce)
 	}
-	allStopWg.Add(6)
-	return notifyChFull, nil
+	return failureChan, nil
 }
 
-// Starts fcheck but only responds to ack hbeats. Also returns the local address of ack listner connection
-func StartOnlyAck(serverIP string) (string, error) {
-	laddr, err := setupHBeatAck(serverIP + ":0")
-	if err != nil {
-		return "", err
-	}
-	allStopWg.Add(3)
-	return laddr, nil
-}
+func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureDetected, err error) {
+	failureChan := make(chan FailureDetected)
 
-// Start fcheck to monitor multiple nodes supllied by a list of StartStruct
-// the function returns a buffered channel of len(args) size
-// any node failures will be pushed to this channel
-func StartMultiMonitor(args []StartStruct) (<-chan FailureDetected, error) {
-	notifyCh := make(chan FailureDetected, len(args))
-	for _, arg := range args {
-		err := setupHBeatMonitor(arg, notifyCh)
+	for servId, servAddr := range arg.RemoteServerAddr {
+		localAddr, err := net.ResolveUDPAddr("udp", arg.LocalAddr[servId])
 		if err != nil {
-			return nil, err
+			return nil, errors.New("could not resolve local CoordAddress for fcheck:" + err.Error())
 		}
-		allStopWg.Add(3)
+
+		remoteAddr, err := net.ResolveUDPAddr("udp", servAddr)
+		if err != nil {
+			return nil, errors.New("could not resolve UDP address: " + err.Error())
+		}
+
+		conn, err := net.DialUDP("udp", localAddr, remoteAddr)
+		if err != nil {
+			return nil, errors.New("could not dial UDP: " + err.Error())
+		}
+
+		go func(conn *net.UDPConn, nonce uint8) {
+			defer conn.Close()
+
+			fmt.Println("starting go routine with epoch " + strconv.FormatInt(int64(nonce), 10))
+
+			//mu.Lock()
+			//routinesList = append(routinesList, routineTerminateInfo{nonce: arg.EpochNonce, terminate: false})
+			//mu.Unlock()
+			//fmt.Println(routinesList)
+
+			continueSendReceive := true
+			var unackedHeartBeats = map[int]time.Time{}
+
+			fname := "./LOGS-FCHECK-" + strconv.FormatInt(int64(nonce), 10)
+			f, fileErr := os.Create(fname)
+			check(fileErr)
+			defer f.Close()
+
+			rtt := time.Second * 3
+			newRtt := rtt
+			var retransmissionDuration time.Duration = 0
+			lostMsgs := 0
+			seqNum := 0
+
+			for {
+				if continueSendReceive {
+					heartBeat := HBeatMessage{
+						EpochNonce: uint64(nonce),
+						SeqNum:     uint64(seqNum),
+					}
+
+					var heartBeatSentTime time.Time
+					if _, err := f.WriteString("retransmission time for seq num " + strconv.FormatInt(int64(seqNum), 10) + ": " + retransmissionDuration.String() + "\n"); err != nil {
+						check(err)
+					}
+					f.Sync()
+
+					// SENDING HEARTBEAT
+					select {
+					case <-time.After(retransmissionDuration):
+						rtt = newRtt
+						if _, err := f.WriteString("rtt value: " + rtt.String() + "\n"); err != nil {
+							check(err)
+						}
+						f.Sync()
+						//fmt.Println("rtt value: " + rtt.String())
+
+						heartBeatSentTime = time.Now()
+						unackedHeartBeats[seqNum] = heartBeatSentTime
+						if _, err := conn.Write(encode(&heartBeat)); err != nil {
+							fmt.Println("udp write failed: " + err.Error())
+						}
+						if _, err := f.WriteString("heartbeat sent at time: " + heartBeatSentTime.String() + "\n"); err != nil {
+							check(err)
+						}
+						f.Sync()
+						// fmt.Println("heartbeat sent at time: " + heartBeatSentTime.String())
+					}
+
+					// RECEIVE ACK CODE STARTS
+					recvBuf := make([]byte, 1024)
+					conn.SetReadDeadline(time.Now().Add(rtt))
+					fromUDP, _, err := conn.ReadFromUDP(recvBuf)
+					ackReceivedTime := time.Now()
+					if err != nil {
+						if _, err := f.WriteString("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10) + "\n"); err != nil {
+							check(err)
+						}
+						f.Sync()
+						//fmt.Println("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10))
+
+						retransmissionDuration = 0
+						lostMsgs++
+						if uint8(lostMsgs) == arg.LostMsgThresh {
+							if _, err := f.WriteString("sending failure info to failureChannel for routine with nonce " + strconv.FormatInt(int64(nonce), 10) + "\n"); err != nil {
+								check(err)
+							}
+							f.Sync()
+
+							failureDetected := FailureDetected{UDPIpPort: conn.RemoteAddr().String(), Timestamp: time.Now(), ServerId: nonce}
+							fmt.Printf("Sending failure notification to notifyChannel inside the go routine: %v\n", failureDetected)
+							failureChan <- failureDetected
+							continueSendReceive = false
+							fmt.Println("Exiting goroutine for serverId ", nonce)
+							return
+						}
+					} else {
+						decoded, err := decode(recvBuf, fromUDP)
+						if err != nil {
+							fmt.Println("could not decode server packet: " + err.Error())
+						} else {
+							_, ok := unackedHeartBeats[int(decoded.HBEatSeqNum)]
+							if ok && decoded.HBEatEpochNonce == uint64(nonce) {
+								estimatedRtt := ackReceivedTime.Sub(unackedHeartBeats[int(decoded.HBEatSeqNum)])
+								retransmissionDuration = time.Duration(math.Abs(float64(rtt - estimatedRtt)))
+								if _, err := f.WriteString("Received ack; seq num: " + strconv.FormatUint(decoded.HBEatSeqNum, 10) + "; estimated rtt for this ack: " + estimatedRtt.String() + "\n"); err != nil {
+									check(err)
+								}
+								f.Sync()
+								// fmt.Println("Received ack; seq num: " + strconv.FormatUint(decoded.HBEatSeqNum, 10) + "; estimated rtt for this ack: " + estimatedRtt.String())
+
+								delete(unackedHeartBeats, int(decoded.HBEatSeqNum))
+								newRtt = (estimatedRtt + rtt) / 2
+								if _, err := f.WriteString("New RTT: " + newRtt.String() + "\n\n\n"); err != nil {
+									check(err)
+								}
+								f.Sync()
+								// .Println("New RTT: " + newRtt.String())
+								// fmt.Printf("\n\n")
+
+								if lostMsgs > 0 {
+									lostMsgs = 0
+								}
+							} else {
+								fmt.Println("received invalid ack; seq num or nonce does not match: ", decoded)
+								fmt.Println("args received from client: ", arg)
+							}
+						}
+					}
+					seqNum++
+				}
+			}
+		}(conn, servId)
 	}
-	return notifyCh, nil
+	return failureChan, nil
 }
 
 // Tells the library to stop monitoring/responding acks.
 func Stop() {
-	// TODO refactor this to use a single chan close
-	stopAckCh <- true
-	util.PrintfBlue("Ack stopped\n")
-	stopMonitorCh <- true
-	util.PrintfBlue("Monitor stopped\n")
-	allStopWg.Wait()
-	util.PrintfBlue("FCheck all stopped\n")
+	if len(routinesList) > 0 {
+		mu.Lock()
+		routinesList[0].terminate = true
+		mu.Unlock()
+	}
+	if len(ackRoutinesList) > 0 {
+		ackMu.Lock()
+		ackRoutinesList[0].terminate = true
+		ackMu.Unlock()
+	}
+
+	fmt.Println("stop called")
+	return
 }
 
-func setupHBeatMonitor(arg StartStruct, notifyCh chan FailureDetected) (err error) {
-	var laddr *net.UDPAddr
-	if arg.HBeatLocalIPHBeatLocalPort != "" {
-		laddr, err = net.ResolveUDPAddr("udp", arg.HBeatLocalIPHBeatLocalPort)
-		if err != nil {
-			return fmt.Errorf("error resolving monitor local ip: %v", err)
-		}
-	} // Otherwise, laddr == nil
-
-	raddr, err := net.ResolveUDPAddr("udp", arg.HBeatRemoteIPHBeatRemotePort)
-	if err != nil {
-		return fmt.Errorf("error resolving monitor remote ip: %v", err)
-	}
-
-	// setup UDP connection
-	conn, err := net.DialUDP("udp", laddr, raddr) // if laddr is nil, an available ip_port is randomly chosen
-	if err != nil {
-		return fmt.Errorf("error connecting monitor server: %v", err)
-	}
-
-	go hBeatMonitorEventLoop(conn, arg, notifyCh)
-
-	return nil
-}
-
-// Read
-func hBeatMonitorRead(conn *net.UDPConn, readMsg chan<- AckMessage) {
-	buffer := make([]byte, 1024)
-	for {
-		n, err := conn.Read(buffer)
-		if err != nil {
-			util.PrintfBlue("error reading ack from udp: %v\n", err)
-			if isConnClosedError(err) {
-				util.PrintfBlue("reading ack goroutine exited\n")
-				allStopWg.Done()
-				return
-			}
-			continue
-		}
-
-		ackMsg, err := decodeAckMsg(buffer, n)
-		if err != nil {
-			util.PrintfBlue("error decoding ack msg: %v\n", err)
-			continue
-		}
-
-		readMsg <- ackMsg
-	}
-}
-
-func hBeatMonitorWrite(conn *net.UDPConn, writeMsg <-chan HBeatMessage, endWrite <-chan struct{}) {
-	for {
-		select {
-		case sendHBeatMsg := <-writeMsg:
-			_, err := conn.Write(encodeHBeatMsg(&sendHBeatMsg))
-			if err != nil {
-				util.PrintfBlue("error writing monitor msg: %v\n", err)
-				if isConnClosedError(err) {
-					return
-				}
-				continue
-			}
-		case <-endWrite:
-			util.PrintfBlue("writing monitor goroutine exited\n")
-			allStopWg.Done()
-			return
-		}
-	}
-}
-
-func hBeatMonitorEventLoop(conn *net.UDPConn, arg StartStruct, notifyCh chan FailureDetected) {
-	nounce := arg.EpochNonce
-	currWriteMsg := HBeatMessage{
-		EpochNonce: arg.EpochNonce,
-		SeqNum:     0,
-	}
-	readMsgCh := make(chan AckMessage, 1)
-	writeMsgCh := make(chan HBeatMessage, 1)
-	gotAck := false
-	lostCount := 0
-	rtt := 3 * time.Second
-	rttTimer := time.NewTimer(rtt)
-	endWriteCh := make(chan struct{})
-	seqNumTimeMap := make(map[uint64]time.Time)
-
-	go hBeatMonitorRead(conn, readMsgCh)
-	go hBeatMonitorWrite(conn, writeMsgCh, endWriteCh)
-
-	util.PrintfBlue("send first hbeat with conn %v -> %v\n", conn.LocalAddr(), conn.RemoteAddr())
-	writeMsgCh <- currWriteMsg // Send the initial message
-
-	for {
-		select {
-		case m := <-readMsgCh:
-			util.PrintfBlue("read an ack %v\n ", m)
-			seqNum := m.HBEatSeqNum
-			startTime, found := seqNumTimeMap[seqNum] // the seqNum is expected
-			if found && m.HBEatEpochNonce == nounce {
-				delete(seqNumTimeMap, seqNum)
-
-				rttNew := time.Since(startTime)
-				rtt = (rtt + rttNew) / 2
-				// add 10 milisecond to help test on local system
-				if rtt < 10*time.Millisecond {
-					rtt = 10 * time.Millisecond
-				}
-
-				gotAck = true
-				util.PrintfBlue("read legal ack: %v new rtt is: %v\n", m, rtt)
-			}
-
-		case <-rttTimer.C:
-			util.PrintfBlue("rtt done, sending %v\n", currWriteMsg.SeqNum)
-			if gotAck {
-				util.PrintfBlue("got ack\n")
-				lostCount = 0
-			} else {
-				util.PrintfBlue("ack delayed\n")
-				lostCount++
-			}
-			gotAck = false
-
-			if lostCount >= int(arg.LostMsgThresh) {
-				// Sends a failure detected and sets doNotRead to false
-				util.PrintfBlue("Exceeded lost msg threshold\n")
-				conn.Close()
-				notifyCh <- FailureDetected{
-					UDPIpPort: arg.HBeatRemoteIPHBeatRemotePort,
-					Timestamp: time.Now(),
-				}
-			} else {
-				// Send the hbeat msg
-				rttTimer = time.NewTimer(rtt)
-				currWriteMsg.SeqNum++
-				seqNumTimeMap[currWriteMsg.SeqNum] = time.Now()
-				writeMsgCh <- currWriteMsg
-			}
-
-		case <-stopMonitorCh:
-			conn.Close()
-			endWriteCh <- struct{}{}
-			util.PrintfBlue("hbeat monitor conn exited\n")
-			allStopWg.Done()
-			return
-		}
-	}
-}
-
-func setupHBeatAck(local_ip_port string) (string, error) {
-	var err error
-	var laddr *net.UDPAddr
-
-	if local_ip_port == "" {
-		return "", fmt.Errorf("fcheck needs a hbeatAck addr")
-	}
-
-	// resolve UDP address
-	laddr, err = net.ResolveUDPAddr("udp", local_ip_port)
-	if err != nil {
-		return "", fmt.Errorf("error resolving: %v", err)
-	}
-
-	// setup UDP connection
-	conn, err := net.ListenUDP("udp", laddr)
-	if err != nil {
-		return "", fmt.Errorf("error setting up UDP conn: %v", err)
-	}
-
-	go hBeatAckEventLoop(conn)
-	return conn.LocalAddr().String(), nil
-}
-
-func hBeatAckRead(conn *net.UDPConn, readMsg chan<- hBeatAckReadMsg) {
-	buffer := make([]byte, 1024)
-
-	for {
-		util.PrintfPurple("waiting to read monitor msg %v\n", conn.LocalAddr())
-		n, raddr, err := conn.ReadFromUDP(buffer)
-		if err != nil {
-			util.PrintfPurple("error reading monitor msg from udp: %v\n", err)
-			if isConnClosedError(err) {
-				util.PrintfPurple("reading monitor msg goroutine exited\n")
-				allStopWg.Done()
-				return
-			}
-			continue
-		}
-
-		hbeatMsg, err := decodeHBeatMsg(buffer, n)
-		if err != nil {
-			util.PrintfPurple("error decoding monitor msg: %v\n", err)
-			continue
-		}
-
-		util.PrintfPurple("read a monitor msg. raddr: %v\n", raddr)
-
-		readMsg <- hBeatAckReadMsg{
-			raddr,
-			&hbeatMsg,
-		}
-	}
-}
-
-func hBeatAckWrite(conn *net.UDPConn, writeMsg <-chan hBeatAckWriteMsg, endWrite <-chan struct{}) {
-	for {
-		select {
-		case sendAckMsg := <-writeMsg:
-			_, err := conn.WriteToUDP(encodeAckMsg(sendAckMsg.msg), sendAckMsg.raddr)
-			if err != nil {
-				util.PrintfPurple("error writing ack msg: %v\n", err)
-				if isConnClosedError(err) {
-					return
-				}
-				continue
-			}
-		case <-endWrite:
-			util.PrintfPurple("writing ack goroutine exited\n")
-			allStopWg.Done()
-			return
-		}
-
-	}
-}
-
-func hBeatAckEventLoop(conn *net.UDPConn) {
-	readMsgCh := make(chan hBeatAckReadMsg, 1)
-	writeMsgCh := make(chan hBeatAckWriteMsg, 1)
-	endWriteCh := make(chan struct{})
-
-	go hBeatAckRead(conn, readMsgCh)
-	go hBeatAckWrite(conn, writeMsgCh, endWriteCh)
-
-	for {
-		select {
-		case m := <-readMsgCh:
-			util.PrintfPurple("responding to hbeat from %v\n", m.raddr)
-			writeMsgCh <- hBeatAckWriteMsg{
-				raddr: m.raddr,
-				msg: &AckMessage{
-					m.msg.EpochNonce,
-					m.msg.SeqNum,
-				},
-			}
-
-		case <-stopAckCh:
-			conn.Close()
-			endWriteCh <- struct{}{}
-			util.PrintfPurple("hbeat ack conn exited\n")
-			allStopWg.Done()
-			return
-		}
-	}
-}
-
-func encodeAckMsg(msg *AckMessage) []byte {
+func encode(hBeat *HBeatMessage) []byte {
 	var buf bytes.Buffer
-	gob.NewEncoder(&buf).Encode(msg)
+	gob.NewEncoder(&buf).Encode(hBeat)
 	return buf.Bytes()
 }
 
-func decodeAckMsg(buf []byte, len int) (AckMessage, error) {
+func decode(buf []byte, len int) (AckMessage, error) {
 	var decoded AckMessage
 	err := gob.NewDecoder(bytes.NewBuffer(buf[0:len])).Decode(&decoded)
 	if err != nil {
@@ -404,13 +472,7 @@ func decodeAckMsg(buf []byte, len int) (AckMessage, error) {
 	return decoded, nil
 }
 
-func encodeHBeatMsg(msg *HBeatMessage) []byte {
-	var buf bytes.Buffer
-	gob.NewEncoder(&buf).Encode(msg)
-	return buf.Bytes()
-}
-
-func decodeHBeatMsg(buf []byte, len int) (HBeatMessage, error) {
+func decodeHeartbeat(buf []byte, len int) (HBeatMessage, error) {
 	var decoded HBeatMessage
 	err := gob.NewDecoder(bytes.NewBuffer(buf[0:len])).Decode(&decoded)
 	if err != nil {
@@ -419,6 +481,14 @@ func decodeHBeatMsg(buf []byte, len int) (HBeatMessage, error) {
 	return decoded, nil
 }
 
-func isConnClosedError(err error) bool {
-	return errors.Is(err, net.ErrClosed)
+func encodeAck(move *AckMessage) []byte {
+	var buf bytes.Buffer
+	gob.NewEncoder(&buf).Encode(move)
+	return buf.Bytes()
+}
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
 }
