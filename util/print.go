@@ -15,7 +15,7 @@ const (
 	colorWhite  = "\033[37m"
 )
 
-var interfaceSlice = make([]interface{}, 1)
+var interfaceSlice []interface{}
 
 // Returns the number of bits written and any write error occured
 // Typically, do not need to worry about the return value
@@ -65,48 +65,41 @@ func PrintlnRed(args ...interface{}) (n int, err error) {
 	if !debugMode {
 		return
 	}
-	interfaceSlice[0] = colorRed
-	return fmt.Println(append(append(interfaceSlice, args...), colorReset)...)
+	return fmt.Println(append(append(append(interfaceSlice, colorRed), args...), colorReset)...)
 }
 func PrintlnGreen(args ...interface{}) (n int, err error) {
 	if !debugMode {
 		return
 	}
-	interfaceSlice[0] = colorGreen
-	return fmt.Println(append(append(interfaceSlice, args...), colorReset)...)
+	return fmt.Println(append(append(append(interfaceSlice, colorGreen), args...), colorReset)...)
 }
 func PrintlnYellow(args ...interface{}) (n int, err error) {
 	if !debugMode {
 		return
 	}
-	interfaceSlice[0] = colorYellow
-	return fmt.Println(append(append(interfaceSlice, args...), colorReset)...)
+	return fmt.Println(append(append(append(interfaceSlice, colorYellow), args...), colorReset)...)
 }
 func PrintlnBlue(args ...interface{}) (n int, err error) {
 	if !debugMode {
 		return
 	}
-	interfaceSlice[0] = colorBlue
-	return fmt.Println(append(append(interfaceSlice, args...), colorReset)...)
+	return fmt.Println(append(append(append(interfaceSlice, colorBlue), args...), colorReset)...)
 }
 func PrintlnPurple(args ...interface{}) (n int, err error) {
 	if !debugMode {
 		return
 	}
-	interfaceSlice[0] = colorPurple
-	return fmt.Println(append(append(interfaceSlice, args...), colorReset)...)
+	return fmt.Println(append(append(append(interfaceSlice, colorPurple), args...), colorReset)...)
 }
 func PrintlnCyan(args ...interface{}) (n int, err error) {
 	if !debugMode {
 		return
 	}
-	interfaceSlice[0] = colorCyan
-	return fmt.Println(append(append(interfaceSlice, args...), colorReset)...)
+	return fmt.Println(append(append(append(interfaceSlice, colorCyan), args...), colorReset)...)
 }
 func PrintlnWhite(args ...interface{}) (n int, err error) {
 	if !debugMode {
 		return
 	}
-	interfaceSlice[0] = colorWhite
-	return fmt.Println(append(append(interfaceSlice, args...), colorReset)...)
+	return fmt.Println(append(append(append(interfaceSlice, colorWhite), args...), colorReset)...)
 }
