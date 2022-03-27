@@ -1,0 +1,2638 @@
+some checks failed... approximate grade: 31.0/33.0
+
+summary:
+rule list ([32m✓[39m for ok, [31m❌[39m for not ok):
+  [32m✓[39m Initialization
+    [32m✓[39m KvslibStart exists and happens before KvslibStop/HeadReq/TailReq/Put/Get
+    [32m✓[39m CoordStart recorded exactly once and happens before ServerJoiningRecvd and AllServersJoined
+    [32m✓[39m Exactly N SeverStart
+    [32m✓[39m ServerStart happens before ServerJoining
+  [32m✓[39m Termination
+    [32m✓[39m KvslibStop(C) cannot be followed by any actions recorded by C
+  [32m✓[39m Join Handling
+    [32m✓[39m Exactly one ServerJoining for each serverId
+    [32m✓[39m ServerJoining behaves correctly
+    [32m✓[39m ServerJoining eventually followed by AllServersJoined
+    [32m✓[39m AllServersJoined must exist and happen before PutRecvd/GetRecvd
+  [32m✓[39m Failure Handling
+    [32m✓[39m ServerFail(S) followed by at most two ServerFailRecvd(S)
+    [32m✓[39m At most one NewFailoverSuccessor(X) or NewFailoverPredecessor(X) happens between a ServerFailRecvd(S) and the next ServerFailRecvd(S') recorded by the same server, where X!=S, S!=S'
+    [32m✓[39m ServerFailRecvd(S) must be followed by at most two ServerFailHandled(S)
+    [32m✓[39m ServerFailHandledRecvd(S) must be preceded by ServerFailHandled(S)
+    [32m✓[39m ServerFail(S) must be eventually followed by NewChain(C) without S
+  [32m✓[39m Join/Failure Handling
+    [32m✓[39m NewChain must be preceded by either ServerFail or ServerJoined
+  [32m✓[39m Head Server Requests
+    [32m✓[39m The number of HeadReq(C) and HeadReqRecvd(C) must be identical
+    [32m✓[39m HeadReq(C) must happen before HeadReqRecvd(C)
+    [32m✓[39m The number of HeadRes(C,S) and HeadResRecvd(C,S) must be identical
+    [32m✓[39m HeadRes(C,S) must happen before HeadResRecvd(C,S)
+  [32m✓[39m Tail Server Requests
+    [32m✓[39m The number of TailReq(C) and TailReqRecvd(C) must be identical
+    [32m✓[39m TailReq(C) must happen before TailReqRecvd(C)
+    [32m✓[39m The number of TailRes(C) and TailResRecvd(C) must be identical
+    [32m✓[39m TailRes(C) must happen before TailResRecvd(C)
+  [31m❌[39m Put Handling
+    [32m✓[39m Put(C) must be preceded by HeadResRecvd(C,S)
+    [31m❌[39m The semantics of Put all recorded in a single Put-Trace
+  [32m✓[39m Get Handling
+    [32m✓[39m Get(C) must be preceded by TailResRecvd(C,S)
+    [32m✓[39m The semantics of Get all recorded in a single Get-Trace
+  [32m✓[39m Put-Get Data Consistency
+    [32m✓[39m Get must have the same value as its latest preceding Put
+  [32m✓[39m Get Before Any Put Data Consistency
+    [32m✓[39m Get with no preceding Put should return empty string
+  [31m❌[39m OpID-GID Consistency
+    [31m❌[39m The OpId for each client should have the same ordering as their corresponding GId
+
+details:
+[31m❌[39m Put Handling -:- The semantics of Put all recorded in a single Put-Trace (file trace_output.log):
+  Put := [33mPut[39m(
+    lineNumber = [32m1729[39m,
+    vectorClock = [33mHashMap[39m(
+      [32m"server2"[39m -> [32m205L[39m,
+      [32m"server3"[39m -> [32m205L[39m,
+      [32m"server4"[39m -> [32m437L[39m,
+      [32m"coord"[39m -> [32m68L[39m,
+      [32m"client2"[39m -> [32m271L[39m,
+      [32m"server1"[39m -> [32m270L[39m,
+      [32m"client1"[39m -> [32m251L[39m
+    ),
+    traceId = [32m"6776376250934190067"[39m,
+    clientId = [32m"2"[39m,
+    opId = [32m51L[39m,
+    key = [32m"k22"[39m,
+    value = [32m"val22"[39m
+  )
+    [31m[1mmore than one value matched; see relevant values[0m at /home/e/ericy676/cs416/a3/spec/a3spec.sc:555
+    contextually relevant values: [33mList[39m(
+      [33mPutResultRecvd[39m(
+        lineNumber = [32m1744[39m,
+        vectorClock = [33mHashMap[39m(
+          [32m"server2"[39m -> [32m205L[39m,
+          [32m"server3"[39m -> [32m205L[39m,
+          [32m"server4"[39m -> [32m437L[39m,
+          [32m"coord"[39m -> [32m68L[39m,
+          [32m"client2"[39m -> [32m274L[39m,
+          [32m"server1"[39m -> [32m280L[39m,
+          [32m"client1"[39m -> [32m251L[39m
+        ),
+        traceId = [32m"6776376250934190067"[39m,
+        opId = [32m51L[39m,
+        gId = [32m204800L[39m,
+        key = [32m"k22"[39m
+      ),
+      [33mPutResultRecvd[39m(
+        lineNumber = [32m1763[39m,
+        vectorClock = [33mHashMap[39m(
+          [32m"server2"[39m -> [32m205L[39m,
+          [32m"server3"[39m -> [32m205L[39m,
+          [32m"server4"[39m -> [32m437L[39m,
+          [32m"coord"[39m -> [32m68L[39m,
+          [32m"client2"[39m -> [32m284L[39m,
+          [32m"server1"[39m -> [32m289L[39m,
+          [32m"client1"[39m -> [32m251L[39m
+        ),
+        traceId = [32m"6776376250934190067"[39m,
+        opId = [32m51L[39m,
+        gId = [32m204800L[39m,
+        key = [32m"k22"[39m
+      )
+    )
+[31m❌[39m OpID-GID Consistency -:- The OpId for each client should have the same ordering as their corresponding GId (file trace_output.log):
+  Put := [33mList[39m(
+    [33mPut[39m(
+      lineNumber = [32m116[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m13L[39m,
+        [32m"server3"[39m -> [32m13L[39m,
+        [32m"server4"[39m -> [32m9L[39m,
+        [32m"coord"[39m -> [32m43L[39m,
+        [32m"client2"[39m -> [32m13L[39m,
+        [32m"server1"[39m -> [32m11L[39m,
+        [32m"client1"[39m -> [32m5L[39m
+      ),
+      traceId = [32m"9175208178002563927"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m1L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value2"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m123[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m13L[39m,
+        [32m"server3"[39m -> [32m13L[39m,
+        [32m"server4"[39m -> [32m9L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m9L[39m,
+        [32m"server1"[39m -> [32m11L[39m,
+        [32m"client1"[39m -> [32m13L[39m
+      ),
+      traceId = [32m"7720445977782997283"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m1L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value2"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m145[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m17L[39m,
+        [32m"server3"[39m -> [32m17L[39m,
+        [32m"server4"[39m -> [32m14L[39m,
+        [32m"coord"[39m -> [32m43L[39m,
+        [32m"client2"[39m -> [32m18L[39m,
+        [32m"server1"[39m -> [32m16L[39m,
+        [32m"client1"[39m -> [32m5L[39m
+      ),
+      traceId = [32m"5718608329074483185"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m2L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value3"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m167[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m21L[39m,
+        [32m"server3"[39m -> [32m21L[39m,
+        [32m"server4"[39m -> [32m18L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m14L[39m,
+        [32m"server1"[39m -> [32m21L[39m,
+        [32m"client1"[39m -> [32m18L[39m
+      ),
+      traceId = [32m"9073933654934781553"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m2L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value3"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m209[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m25L[39m,
+        [32m"server3"[39m -> [32m25L[39m,
+        [32m"server4"[39m -> [32m27L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m28L[39m,
+        [32m"server1"[39m -> [32m26L[39m,
+        [32m"client1"[39m -> [32m14L[39m
+      ),
+      traceId = [32m"4689356614421180276"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m4L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value1"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m241[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m29L[39m,
+        [32m"server3"[39m -> [32m29L[39m,
+        [32m"server4"[39m -> [32m36L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m24L[39m,
+        [32m"server1"[39m -> [32m31L[39m,
+        [32m"client1"[39m -> [32m28L[39m
+      ),
+      traceId = [32m"7038020943479817253"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m4L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value1"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m295[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m54L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m43L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m29L[39m
+      ),
+      traceId = [32m"8659438386433578432"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m7L[39m,
+      key = [32m"k0"[39m,
+      value = [32m"val0"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m327[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m64L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m39L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m43L[39m
+      ),
+      traceId = [32m"1177217141282953907"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m7L[39m,
+      key = [32m"k0"[39m,
+      value = [32m"val0"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m357[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m41L[39m,
+        [32m"server3"[39m -> [32m41L[39m,
+        [32m"server4"[39m -> [32m73L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m53L[39m,
+        [32m"server1"[39m -> [32m46L[39m,
+        [32m"client1"[39m -> [32m39L[39m
+      ),
+      traceId = [32m"2537003085669406599"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m9L[39m,
+      key = [32m"k1"[39m,
+      value = [32m"val1"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m392[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m45L[39m,
+        [32m"server3"[39m -> [32m45L[39m,
+        [32m"server4"[39m -> [32m82L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m49L[39m,
+        [32m"server1"[39m -> [32m51L[39m,
+        [32m"client1"[39m -> [32m53L[39m
+      ),
+      traceId = [32m"5650580683873559120"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m9L[39m,
+      key = [32m"k1"[39m,
+      value = [32m"val1"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m423[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m49L[39m,
+        [32m"server3"[39m -> [32m49L[39m,
+        [32m"server4"[39m -> [32m91L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m63L[39m,
+        [32m"server1"[39m -> [32m56L[39m,
+        [32m"client1"[39m -> [32m49L[39m
+      ),
+      traceId = [32m"8258988045934982018"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m11L[39m,
+      key = [32m"k2"[39m,
+      value = [32m"val2"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m454[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m53L[39m,
+        [32m"server3"[39m -> [32m53L[39m,
+        [32m"server4"[39m -> [32m100L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m59L[39m,
+        [32m"server1"[39m -> [32m61L[39m,
+        [32m"client1"[39m -> [32m63L[39m
+      ),
+      traceId = [32m"4293821010063382646"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m11L[39m,
+      key = [32m"k2"[39m,
+      value = [32m"val2"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m486[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m57L[39m,
+        [32m"server3"[39m -> [32m57L[39m,
+        [32m"server4"[39m -> [32m109L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m73L[39m,
+        [32m"server1"[39m -> [32m66L[39m,
+        [32m"client1"[39m -> [32m59L[39m
+      ),
+      traceId = [32m"5523199273272756021"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m13L[39m,
+      key = [32m"k3"[39m,
+      value = [32m"val3"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m516[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m61L[39m,
+        [32m"server3"[39m -> [32m61L[39m,
+        [32m"server4"[39m -> [32m118L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m69L[39m,
+        [32m"server1"[39m -> [32m71L[39m,
+        [32m"client1"[39m -> [32m73L[39m
+      ),
+      traceId = [32m"4936520555331613387"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m13L[39m,
+      key = [32m"k3"[39m,
+      value = [32m"val3"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m551[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m65L[39m,
+        [32m"server3"[39m -> [32m65L[39m,
+        [32m"server4"[39m -> [32m127L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m83L[39m,
+        [32m"server1"[39m -> [32m76L[39m,
+        [32m"client1"[39m -> [32m69L[39m
+      ),
+      traceId = [32m"5403808775989405074"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m15L[39m,
+      key = [32m"k4"[39m,
+      value = [32m"val4"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m582[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m69L[39m,
+        [32m"server3"[39m -> [32m69L[39m,
+        [32m"server4"[39m -> [32m136L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m79L[39m,
+        [32m"server1"[39m -> [32m81L[39m,
+        [32m"client1"[39m -> [32m83L[39m
+      ),
+      traceId = [32m"9029257860033065911"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m15L[39m,
+      key = [32m"k4"[39m,
+      value = [32m"val4"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m613[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m73L[39m,
+        [32m"server3"[39m -> [32m73L[39m,
+        [32m"server4"[39m -> [32m145L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m93L[39m,
+        [32m"server1"[39m -> [32m86L[39m,
+        [32m"client1"[39m -> [32m79L[39m
+      ),
+      traceId = [32m"5421858153812764028"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m17L[39m,
+      key = [32m"k5"[39m,
+      value = [32m"val5"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m644[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m77L[39m,
+        [32m"server3"[39m -> [32m77L[39m,
+        [32m"server4"[39m -> [32m154L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m89L[39m,
+        [32m"server1"[39m -> [32m91L[39m,
+        [32m"client1"[39m -> [32m93L[39m
+      ),
+      traceId = [32m"8307930017092371403"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m17L[39m,
+      key = [32m"k5"[39m,
+      value = [32m"val5"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m679[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m81L[39m,
+        [32m"server3"[39m -> [32m81L[39m,
+        [32m"server4"[39m -> [32m163L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m103L[39m,
+        [32m"server1"[39m -> [32m96L[39m,
+        [32m"client1"[39m -> [32m89L[39m
+      ),
+      traceId = [32m"3826041724798910777"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m19L[39m,
+      key = [32m"k6"[39m,
+      value = [32m"val6"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m711[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m85L[39m,
+        [32m"server3"[39m -> [32m85L[39m,
+        [32m"server4"[39m -> [32m172L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m99L[39m,
+        [32m"server1"[39m -> [32m101L[39m,
+        [32m"client1"[39m -> [32m103L[39m
+      ),
+      traceId = [32m"3229085113829671241"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m19L[39m,
+      key = [32m"k6"[39m,
+      value = [32m"val6"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m743[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m89L[39m,
+        [32m"server3"[39m -> [32m89L[39m,
+        [32m"server4"[39m -> [32m181L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m113L[39m,
+        [32m"server1"[39m -> [32m106L[39m,
+        [32m"client1"[39m -> [32m99L[39m
+      ),
+      traceId = [32m"3663120858067202990"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m21L[39m,
+      key = [32m"k7"[39m,
+      value = [32m"val7"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m772[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m93L[39m,
+        [32m"server3"[39m -> [32m93L[39m,
+        [32m"server4"[39m -> [32m190L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m109L[39m,
+        [32m"server1"[39m -> [32m111L[39m,
+        [32m"client1"[39m -> [32m113L[39m
+      ),
+      traceId = [32m"934136435839948728"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m21L[39m,
+      key = [32m"k7"[39m,
+      value = [32m"val7"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m803[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m97L[39m,
+        [32m"server3"[39m -> [32m97L[39m,
+        [32m"server4"[39m -> [32m199L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m123L[39m,
+        [32m"server1"[39m -> [32m116L[39m,
+        [32m"client1"[39m -> [32m109L[39m
+      ),
+      traceId = [32m"4856708806598640212"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m23L[39m,
+      key = [32m"k8"[39m,
+      value = [32m"val8"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m837[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m101L[39m,
+        [32m"server3"[39m -> [32m101L[39m,
+        [32m"server4"[39m -> [32m208L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m119L[39m,
+        [32m"server1"[39m -> [32m121L[39m,
+        [32m"client1"[39m -> [32m123L[39m
+      ),
+      traceId = [32m"4648921412268842797"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m23L[39m,
+      key = [32m"k8"[39m,
+      value = [32m"val8"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m870[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m105L[39m,
+        [32m"server3"[39m -> [32m105L[39m,
+        [32m"server4"[39m -> [32m217L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m133L[39m,
+        [32m"server1"[39m -> [32m126L[39m,
+        [32m"client1"[39m -> [32m119L[39m
+      ),
+      traceId = [32m"7056691590060731704"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m25L[39m,
+      key = [32m"k9"[39m,
+      value = [32m"val9"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m902[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m109L[39m,
+        [32m"server3"[39m -> [32m109L[39m,
+        [32m"server4"[39m -> [32m226L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m129L[39m,
+        [32m"server1"[39m -> [32m131L[39m,
+        [32m"client1"[39m -> [32m133L[39m
+      ),
+      traceId = [32m"4217910553380170872"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m25L[39m,
+      key = [32m"k9"[39m,
+      value = [32m"val9"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m935[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m113L[39m,
+        [32m"server3"[39m -> [32m113L[39m,
+        [32m"server4"[39m -> [32m235L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m143L[39m,
+        [32m"server1"[39m -> [32m136L[39m,
+        [32m"client1"[39m -> [32m129L[39m
+      ),
+      traceId = [32m"8837558640135424386"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m27L[39m,
+      key = [32m"k10"[39m,
+      value = [32m"val10"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m965[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m117L[39m,
+        [32m"server3"[39m -> [32m117L[39m,
+        [32m"server4"[39m -> [32m244L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m139L[39m,
+        [32m"server1"[39m -> [32m141L[39m,
+        [32m"client1"[39m -> [32m143L[39m
+      ),
+      traceId = [32m"3146596096921478082"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m27L[39m,
+      key = [32m"k10"[39m,
+      value = [32m"val10"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m998[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m121L[39m,
+        [32m"server3"[39m -> [32m121L[39m,
+        [32m"server4"[39m -> [32m253L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m153L[39m,
+        [32m"server1"[39m -> [32m146L[39m,
+        [32m"client1"[39m -> [32m139L[39m
+      ),
+      traceId = [32m"1513650867914143591"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m29L[39m,
+      key = [32m"k11"[39m,
+      value = [32m"val11"[39m
+    ),
+    [33mPut[39m(
+      lineNumber = [32m1030[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m125L[39m,
+        [32m"server3"[39m -> [32m125L[39m,
+...
+  PutResultRecvd := [33mList[39m(
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m141[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m17L[39m,
+        [32m"server3"[39m -> [32m17L[39m,
+        [32m"server4"[39m -> [32m14L[39m,
+        [32m"coord"[39m -> [32m43L[39m,
+        [32m"client2"[39m -> [32m16L[39m,
+        [32m"server1"[39m -> [32m16L[39m,
+        [32m"client1"[39m -> [32m5L[39m
+      ),
+      traceId = [32m"9175208178002563927"[39m,
+      opId = [32m1L[39m,
+      gId = [32m4096L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m163[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m21L[39m,
+        [32m"server3"[39m -> [32m21L[39m,
+        [32m"server4"[39m -> [32m18L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m14L[39m,
+        [32m"server1"[39m -> [32m21L[39m,
+        [32m"client1"[39m -> [32m16L[39m
+      ),
+      traceId = [32m"7720445977782997283"[39m,
+      opId = [32m1L[39m,
+      gId = [32m8192L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m185[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m25L[39m,
+        [32m"server3"[39m -> [32m25L[39m,
+        [32m"server4"[39m -> [32m22L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m21L[39m,
+        [32m"server1"[39m -> [32m26L[39m,
+        [32m"client1"[39m -> [32m14L[39m
+      ),
+      traceId = [32m"5718608329074483185"[39m,
+      opId = [32m2L[39m,
+      gId = [32m12288L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m217[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m29L[39m,
+        [32m"server3"[39m -> [32m29L[39m,
+        [32m"server4"[39m -> [32m31L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m24L[39m,
+        [32m"server1"[39m -> [32m31L[39m,
+        [32m"client1"[39m -> [32m21L[39m
+      ),
+      traceId = [32m"9073933654934781553"[39m,
+      opId = [32m2L[39m,
+      gId = [32m16384L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m250[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m33L[39m,
+        [32m"server3"[39m -> [32m33L[39m,
+        [32m"server4"[39m -> [32m40L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m31L[39m,
+        [32m"server1"[39m -> [32m36L[39m,
+        [32m"client1"[39m -> [32m24L[39m
+      ),
+      traceId = [32m"4689356614421180276"[39m,
+      opId = [32m4L[39m,
+      gId = [32m20480L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m284[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m51L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m39L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m31L[39m
+      ),
+      traceId = [32m"7038020943479817253"[39m,
+      opId = [32m4L[39m,
+      gId = [32m24576L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m334[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m41L[39m,
+        [32m"server3"[39m -> [32m41L[39m,
+        [32m"server4"[39m -> [32m68L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m46L[39m,
+        [32m"server1"[39m -> [32m46L[39m,
+        [32m"client1"[39m -> [32m39L[39m
+      ),
+      traceId = [32m"8659438386433578432"[39m,
+      opId = [32m7L[39m,
+      gId = [32m28672L[39m,
+      key = [32m"k0"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m366[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m45L[39m,
+        [32m"server3"[39m -> [32m45L[39m,
+        [32m"server4"[39m -> [32m77L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m49L[39m,
+        [32m"server1"[39m -> [32m51L[39m,
+        [32m"client1"[39m -> [32m46L[39m
+      ),
+      traceId = [32m"1177217141282953907"[39m,
+      opId = [32m7L[39m,
+      gId = [32m32768L[39m,
+      key = [32m"k0"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m399[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m49L[39m,
+        [32m"server3"[39m -> [32m49L[39m,
+        [32m"server4"[39m -> [32m86L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m56L[39m,
+        [32m"server1"[39m -> [32m56L[39m,
+        [32m"client1"[39m -> [32m49L[39m
+      ),
+      traceId = [32m"2537003085669406599"[39m,
+      opId = [32m9L[39m,
+      gId = [32m36864L[39m,
+      key = [32m"k1"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m430[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m53L[39m,
+        [32m"server3"[39m -> [32m53L[39m,
+        [32m"server4"[39m -> [32m95L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m59L[39m,
+        [32m"server1"[39m -> [32m61L[39m,
+        [32m"client1"[39m -> [32m56L[39m
+      ),
+      traceId = [32m"5650580683873559120"[39m,
+      opId = [32m9L[39m,
+      gId = [32m40960L[39m,
+      key = [32m"k1"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m462[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m57L[39m,
+        [32m"server3"[39m -> [32m57L[39m,
+        [32m"server4"[39m -> [32m104L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m66L[39m,
+        [32m"server1"[39m -> [32m66L[39m,
+        [32m"client1"[39m -> [32m59L[39m
+      ),
+      traceId = [32m"8258988045934982018"[39m,
+      opId = [32m11L[39m,
+      gId = [32m45056L[39m,
+      key = [32m"k2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m493[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m61L[39m,
+        [32m"server3"[39m -> [32m61L[39m,
+        [32m"server4"[39m -> [32m113L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m69L[39m,
+        [32m"server1"[39m -> [32m71L[39m,
+        [32m"client1"[39m -> [32m66L[39m
+      ),
+      traceId = [32m"4293821010063382646"[39m,
+      opId = [32m11L[39m,
+      gId = [32m49152L[39m,
+      key = [32m"k2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m526[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m65L[39m,
+        [32m"server3"[39m -> [32m65L[39m,
+        [32m"server4"[39m -> [32m122L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m76L[39m,
+        [32m"server1"[39m -> [32m76L[39m,
+        [32m"client1"[39m -> [32m69L[39m
+      ),
+      traceId = [32m"5523199273272756021"[39m,
+      opId = [32m13L[39m,
+      gId = [32m53248L[39m,
+      key = [32m"k3"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m557[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m69L[39m,
+        [32m"server3"[39m -> [32m69L[39m,
+        [32m"server4"[39m -> [32m131L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m79L[39m,
+        [32m"server1"[39m -> [32m81L[39m,
+        [32m"client1"[39m -> [32m76L[39m
+      ),
+      traceId = [32m"4936520555331613387"[39m,
+      opId = [32m13L[39m,
+      gId = [32m57344L[39m,
+      key = [32m"k3"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m590[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m73L[39m,
+        [32m"server3"[39m -> [32m73L[39m,
+        [32m"server4"[39m -> [32m140L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m86L[39m,
+        [32m"server1"[39m -> [32m86L[39m,
+        [32m"client1"[39m -> [32m79L[39m
+      ),
+      traceId = [32m"5403808775989405074"[39m,
+      opId = [32m15L[39m,
+      gId = [32m61440L[39m,
+      key = [32m"k4"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m621[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m77L[39m,
+        [32m"server3"[39m -> [32m77L[39m,
+        [32m"server4"[39m -> [32m149L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m89L[39m,
+        [32m"server1"[39m -> [32m91L[39m,
+        [32m"client1"[39m -> [32m86L[39m
+      ),
+      traceId = [32m"9029257860033065911"[39m,
+      opId = [32m15L[39m,
+      gId = [32m65536L[39m,
+      key = [32m"k4"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m654[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m81L[39m,
+        [32m"server3"[39m -> [32m81L[39m,
+        [32m"server4"[39m -> [32m158L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m96L[39m,
+        [32m"server1"[39m -> [32m96L[39m,
+        [32m"client1"[39m -> [32m89L[39m
+      ),
+      traceId = [32m"5421858153812764028"[39m,
+      opId = [32m17L[39m,
+      gId = [32m69632L[39m,
+      key = [32m"k5"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m686[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m85L[39m,
+        [32m"server3"[39m -> [32m85L[39m,
+        [32m"server4"[39m -> [32m167L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m99L[39m,
+        [32m"server1"[39m -> [32m101L[39m,
+        [32m"client1"[39m -> [32m96L[39m
+      ),
+      traceId = [32m"8307930017092371403"[39m,
+      opId = [32m17L[39m,
+      gId = [32m73728L[39m,
+      key = [32m"k5"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m718[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m89L[39m,
+        [32m"server3"[39m -> [32m89L[39m,
+        [32m"server4"[39m -> [32m176L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m106L[39m,
+        [32m"server1"[39m -> [32m106L[39m,
+        [32m"client1"[39m -> [32m99L[39m
+      ),
+      traceId = [32m"3826041724798910777"[39m,
+      opId = [32m19L[39m,
+      gId = [32m77824L[39m,
+      key = [32m"k6"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m749[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m93L[39m,
+        [32m"server3"[39m -> [32m93L[39m,
+        [32m"server4"[39m -> [32m185L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m109L[39m,
+        [32m"server1"[39m -> [32m111L[39m,
+        [32m"client1"[39m -> [32m106L[39m
+      ),
+      traceId = [32m"3229085113829671241"[39m,
+      opId = [32m19L[39m,
+      gId = [32m81920L[39m,
+      key = [32m"k6"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m781[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m97L[39m,
+        [32m"server3"[39m -> [32m97L[39m,
+        [32m"server4"[39m -> [32m194L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m116L[39m,
+        [32m"server1"[39m -> [32m116L[39m,
+        [32m"client1"[39m -> [32m109L[39m
+      ),
+      traceId = [32m"3663120858067202990"[39m,
+      opId = [32m21L[39m,
+      gId = [32m86016L[39m,
+      key = [32m"k7"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m813[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m101L[39m,
+        [32m"server3"[39m -> [32m101L[39m,
+        [32m"server4"[39m -> [32m203L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m119L[39m,
+        [32m"server1"[39m -> [32m121L[39m,
+        [32m"client1"[39m -> [32m116L[39m
+      ),
+      traceId = [32m"934136435839948728"[39m,
+      opId = [32m21L[39m,
+      gId = [32m90112L[39m,
+      key = [32m"k7"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m846[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m105L[39m,
+        [32m"server3"[39m -> [32m105L[39m,
+        [32m"server4"[39m -> [32m212L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m126L[39m,
+        [32m"server1"[39m -> [32m126L[39m,
+        [32m"client1"[39m -> [32m119L[39m
+      ),
+      traceId = [32m"4856708806598640212"[39m,
+      opId = [32m23L[39m,
+      gId = [32m94208L[39m,
+      key = [32m"k8"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m878[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m109L[39m,
+        [32m"server3"[39m -> [32m109L[39m,
+        [32m"server4"[39m -> [32m221L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m129L[39m,
+        [32m"server1"[39m -> [32m131L[39m,
+        [32m"client1"[39m -> [32m126L[39m
+      ),
+      traceId = [32m"4648921412268842797"[39m,
+      opId = [32m23L[39m,
+      gId = [32m98304L[39m,
+      key = [32m"k8"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m910[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m113L[39m,
+        [32m"server3"[39m -> [32m113L[39m,
+        [32m"server4"[39m -> [32m230L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m136L[39m,
+        [32m"server1"[39m -> [32m136L[39m,
+        [32m"client1"[39m -> [32m129L[39m
+      ),
+      traceId = [32m"7056691590060731704"[39m,
+      opId = [32m25L[39m,
+      gId = [32m102400L[39m,
+      key = [32m"k9"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m942[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m117L[39m,
+        [32m"server3"[39m -> [32m117L[39m,
+        [32m"server4"[39m -> [32m239L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m139L[39m,
+        [32m"server1"[39m -> [32m141L[39m,
+        [32m"client1"[39m -> [32m136L[39m
+      ),
+      traceId = [32m"4217910553380170872"[39m,
+      opId = [32m25L[39m,
+      gId = [32m106496L[39m,
+      key = [32m"k9"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m975[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m121L[39m,
+        [32m"server3"[39m -> [32m121L[39m,
+        [32m"server4"[39m -> [32m248L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m146L[39m,
+        [32m"server1"[39m -> [32m146L[39m,
+        [32m"client1"[39m -> [32m139L[39m
+      ),
+      traceId = [32m"8837558640135424386"[39m,
+      opId = [32m27L[39m,
+      gId = [32m110592L[39m,
+      key = [32m"k10"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1007[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m125L[39m,
+        [32m"server3"[39m -> [32m125L[39m,
+        [32m"server4"[39m -> [32m257L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m149L[39m,
+        [32m"server1"[39m -> [32m151L[39m,
+        [32m"client1"[39m -> [32m146L[39m
+      ),
+      traceId = [32m"3146596096921478082"[39m,
+      opId = [32m27L[39m,
+      gId = [32m114688L[39m,
+      key = [32m"k10"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1038[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m129L[39m,
+        [32m"server3"[39m -> [32m129L[39m,
+        [32m"server4"[39m -> [32m266L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m156L[39m,
+        [32m"server1"[39m -> [32m156L[39m,
+        [32m"client1"[39m -> [32m149L[39m
+      ),
+      traceId = [32m"1513650867914143591"[39m,
+      opId = [32m29L[39m,
+      gId = [32m118784L[39m,
+      key = [32m"k11"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1070[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m133L[39m,
+        [32m"server3"[39m -> [32m133L[39m,
+        [32m"server4"[39m -> [32m275L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m159L[39m,
+        [32m"server1"[39m -> [32m161L[39m,
+        [32m"client1"[39m -> [32m156L[39m
+      ),
+      traceId = [32m"4909614957315776887"[39m,
+      opId = [32m29L[39m,
+      gId = [32m122880L[39m,
+      key = [32m"k11"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1102[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m137L[39m,
+        [32m"server3"[39m -> [32m137L[39m,
+        [32m"server4"[39m -> [32m284L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m166L[39m,
+        [32m"server1"[39m -> [32m166L[39m,
+        [32m"client1"[39m -> [32m159L[39m
+      ),
+      traceId = [32m"2479714022574063064"[39m,
+      opId = [32m31L[39m,
+      gId = [32m126976L[39m,
+      key = [32m"k12"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1134[39m,
+...
+  Get := [33mList[39m(
+    [33mGet[39m(
+      lineNumber = [32m189[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m25L[39m,
+        [32m"server3"[39m -> [32m25L[39m,
+        [32m"server4"[39m -> [32m22L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m23L[39m,
+        [32m"server1"[39m -> [32m26L[39m,
+        [32m"client1"[39m -> [32m14L[39m
+      ),
+      traceId = [32m"892544785310560043"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m3L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m221[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m29L[39m,
+        [32m"server3"[39m -> [32m29L[39m,
+        [32m"server4"[39m -> [32m31L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m24L[39m,
+        [32m"server1"[39m -> [32m31L[39m,
+        [32m"client1"[39m -> [32m23L[39m
+      ),
+      traceId = [32m"3300079945397763607"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m3L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m253[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m33L[39m,
+        [32m"server3"[39m -> [32m33L[39m,
+        [32m"server4"[39m -> [32m40L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m33L[39m,
+        [32m"server1"[39m -> [32m36L[39m,
+        [32m"client1"[39m -> [32m24L[39m
+      ),
+      traceId = [32m"8186285963672789949"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m5L[39m,
+      key = [32m"key1"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m274[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m33L[39m,
+        [32m"server3"[39m -> [32m33L[39m,
+        [32m"server4"[39m -> [32m45L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m38L[39m,
+        [32m"server1"[39m -> [32m36L[39m,
+        [32m"client1"[39m -> [32m24L[39m
+      ),
+      traceId = [32m"7910981375278900929"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m6L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m288[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m51L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m39L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m33L[39m
+      ),
+      traceId = [32m"4307236955522859261"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m5L[39m,
+      key = [32m"key1"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m308[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m59L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m39L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m38L[39m
+      ),
+      traceId = [32m"7985648209272934039"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m6L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m337[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m41L[39m,
+        [32m"server3"[39m -> [32m41L[39m,
+        [32m"server4"[39m -> [32m68L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m48L[39m,
+        [32m"server1"[39m -> [32m46L[39m,
+        [32m"client1"[39m -> [32m39L[39m
+      ),
+      traceId = [32m"4606705055602942253"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m8L[39m,
+      key = [32m"k0"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m371[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m45L[39m,
+        [32m"server3"[39m -> [32m45L[39m,
+        [32m"server4"[39m -> [32m77L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m49L[39m,
+        [32m"server1"[39m -> [32m51L[39m,
+        [32m"client1"[39m -> [32m48L[39m
+      ),
+      traceId = [32m"5903203566033749433"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m8L[39m,
+      key = [32m"k0"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m403[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m49L[39m,
+        [32m"server3"[39m -> [32m49L[39m,
+        [32m"server4"[39m -> [32m86L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m58L[39m,
+        [32m"server1"[39m -> [32m56L[39m,
+        [32m"client1"[39m -> [32m49L[39m
+      ),
+      traceId = [32m"6824637342303172087"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m10L[39m,
+      key = [32m"k1"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m434[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m53L[39m,
+        [32m"server3"[39m -> [32m53L[39m,
+        [32m"server4"[39m -> [32m95L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m59L[39m,
+        [32m"server1"[39m -> [32m61L[39m,
+        [32m"client1"[39m -> [32m58L[39m
+      ),
+      traceId = [32m"6454370072772859194"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m10L[39m,
+      key = [32m"k1"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m466[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m57L[39m,
+        [32m"server3"[39m -> [32m57L[39m,
+        [32m"server4"[39m -> [32m104L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m68L[39m,
+        [32m"server1"[39m -> [32m66L[39m,
+        [32m"client1"[39m -> [32m59L[39m
+      ),
+      traceId = [32m"196691718296636535"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m12L[39m,
+      key = [32m"k2"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m497[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m61L[39m,
+        [32m"server3"[39m -> [32m61L[39m,
+        [32m"server4"[39m -> [32m113L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m69L[39m,
+        [32m"server1"[39m -> [32m71L[39m,
+        [32m"client1"[39m -> [32m68L[39m
+      ),
+      traceId = [32m"1833508085254621130"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m12L[39m,
+      key = [32m"k2"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m531[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m65L[39m,
+        [32m"server3"[39m -> [32m65L[39m,
+        [32m"server4"[39m -> [32m122L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m78L[39m,
+        [32m"server1"[39m -> [32m76L[39m,
+        [32m"client1"[39m -> [32m69L[39m
+      ),
+      traceId = [32m"2668238230753437281"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m14L[39m,
+      key = [32m"k3"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m561[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m69L[39m,
+        [32m"server3"[39m -> [32m69L[39m,
+        [32m"server4"[39m -> [32m131L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m79L[39m,
+        [32m"server1"[39m -> [32m81L[39m,
+        [32m"client1"[39m -> [32m78L[39m
+      ),
+      traceId = [32m"8283405228153702514"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m14L[39m,
+      key = [32m"k3"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m593[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m73L[39m,
+        [32m"server3"[39m -> [32m73L[39m,
+        [32m"server4"[39m -> [32m140L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m88L[39m,
+        [32m"server1"[39m -> [32m86L[39m,
+        [32m"client1"[39m -> [32m79L[39m
+      ),
+      traceId = [32m"8473562829419547269"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m16L[39m,
+      key = [32m"k4"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m625[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m77L[39m,
+        [32m"server3"[39m -> [32m77L[39m,
+        [32m"server4"[39m -> [32m149L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m89L[39m,
+        [32m"server1"[39m -> [32m91L[39m,
+        [32m"client1"[39m -> [32m88L[39m
+      ),
+      traceId = [32m"5333151769781166816"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m16L[39m,
+      key = [32m"k4"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m659[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m81L[39m,
+        [32m"server3"[39m -> [32m81L[39m,
+        [32m"server4"[39m -> [32m158L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m98L[39m,
+        [32m"server1"[39m -> [32m96L[39m,
+        [32m"client1"[39m -> [32m89L[39m
+      ),
+      traceId = [32m"5966560896434109551"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m18L[39m,
+      key = [32m"k5"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m690[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m85L[39m,
+        [32m"server3"[39m -> [32m85L[39m,
+        [32m"server4"[39m -> [32m167L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m99L[39m,
+        [32m"server1"[39m -> [32m101L[39m,
+        [32m"client1"[39m -> [32m98L[39m
+      ),
+      traceId = [32m"5949657293181496073"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m18L[39m,
+      key = [32m"k5"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m723[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m89L[39m,
+        [32m"server3"[39m -> [32m89L[39m,
+        [32m"server4"[39m -> [32m176L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m108L[39m,
+        [32m"server1"[39m -> [32m106L[39m,
+        [32m"client1"[39m -> [32m99L[39m
+      ),
+      traceId = [32m"2898688929992048275"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m20L[39m,
+      key = [32m"k6"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m753[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m93L[39m,
+        [32m"server3"[39m -> [32m93L[39m,
+        [32m"server4"[39m -> [32m185L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m109L[39m,
+        [32m"server1"[39m -> [32m111L[39m,
+        [32m"client1"[39m -> [32m108L[39m
+      ),
+      traceId = [32m"6578182097918394181"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m20L[39m,
+      key = [32m"k6"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m784[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m97L[39m,
+        [32m"server3"[39m -> [32m97L[39m,
+        [32m"server4"[39m -> [32m194L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m118L[39m,
+        [32m"server1"[39m -> [32m116L[39m,
+        [32m"client1"[39m -> [32m109L[39m
+      ),
+      traceId = [32m"5943828549963103672"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m22L[39m,
+      key = [32m"k7"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m817[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m101L[39m,
+        [32m"server3"[39m -> [32m101L[39m,
+        [32m"server4"[39m -> [32m203L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m119L[39m,
+        [32m"server1"[39m -> [32m121L[39m,
+        [32m"client1"[39m -> [32m118L[39m
+      ),
+      traceId = [32m"7736224593410147704"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m22L[39m,
+      key = [32m"k7"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m850[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m105L[39m,
+        [32m"server3"[39m -> [32m105L[39m,
+        [32m"server4"[39m -> [32m212L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m128L[39m,
+        [32m"server1"[39m -> [32m126L[39m,
+        [32m"client1"[39m -> [32m119L[39m
+      ),
+      traceId = [32m"5991681401608926842"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m24L[39m,
+      key = [32m"k8"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m883[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m109L[39m,
+        [32m"server3"[39m -> [32m109L[39m,
+        [32m"server4"[39m -> [32m221L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m129L[39m,
+        [32m"server1"[39m -> [32m131L[39m,
+        [32m"client1"[39m -> [32m128L[39m
+      ),
+      traceId = [32m"4510356479693947342"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m24L[39m,
+      key = [32m"k8"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m914[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m113L[39m,
+        [32m"server3"[39m -> [32m113L[39m,
+        [32m"server4"[39m -> [32m230L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m138L[39m,
+        [32m"server1"[39m -> [32m136L[39m,
+        [32m"client1"[39m -> [32m129L[39m
+      ),
+      traceId = [32m"556508480070331496"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m26L[39m,
+      key = [32m"k9"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m946[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m117L[39m,
+        [32m"server3"[39m -> [32m117L[39m,
+        [32m"server4"[39m -> [32m239L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m139L[39m,
+        [32m"server1"[39m -> [32m141L[39m,
+        [32m"client1"[39m -> [32m138L[39m
+      ),
+      traceId = [32m"8158376920601494645"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m26L[39m,
+      key = [32m"k9"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m979[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m121L[39m,
+        [32m"server3"[39m -> [32m121L[39m,
+        [32m"server4"[39m -> [32m248L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m148L[39m,
+        [32m"server1"[39m -> [32m146L[39m,
+        [32m"client1"[39m -> [32m139L[39m
+      ),
+      traceId = [32m"299193283751200225"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m28L[39m,
+      key = [32m"k10"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m1011[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m125L[39m,
+        [32m"server3"[39m -> [32m125L[39m,
+        [32m"server4"[39m -> [32m257L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m149L[39m,
+        [32m"server1"[39m -> [32m151L[39m,
+        [32m"client1"[39m -> [32m148L[39m
+      ),
+      traceId = [32m"7725982564152744422"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m28L[39m,
+      key = [32m"k10"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m1041[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m129L[39m,
+        [32m"server3"[39m -> [32m129L[39m,
+        [32m"server4"[39m -> [32m266L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m158L[39m,
+        [32m"server1"[39m -> [32m156L[39m,
+        [32m"client1"[39m -> [32m149L[39m
+      ),
+      traceId = [32m"2537246602649828466"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m30L[39m,
+      key = [32m"k11"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m1074[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m133L[39m,
+        [32m"server3"[39m -> [32m133L[39m,
+        [32m"server4"[39m -> [32m275L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m159L[39m,
+        [32m"server1"[39m -> [32m161L[39m,
+        [32m"client1"[39m -> [32m158L[39m
+      ),
+      traceId = [32m"992989150080145738"[39m,
+      clientId = [32m"1"[39m,
+      opId = [32m30L[39m,
+      key = [32m"k11"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m1107[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m137L[39m,
+        [32m"server3"[39m -> [32m137L[39m,
+        [32m"server4"[39m -> [32m284L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m168L[39m,
+        [32m"server1"[39m -> [32m166L[39m,
+        [32m"client1"[39m -> [32m159L[39m
+      ),
+      traceId = [32m"2503448147673688684"[39m,
+      clientId = [32m"2"[39m,
+      opId = [32m32L[39m,
+      key = [32m"k12"[39m
+    ),
+    [33mGet[39m(
+      lineNumber = [32m1137[39m,
+...
+  GetResultRecvd := [33mList[39m(
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m206[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m25L[39m,
+        [32m"server3"[39m -> [32m25L[39m,
+        [32m"server4"[39m -> [32m27L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m26L[39m,
+        [32m"server1"[39m -> [32m26L[39m,
+        [32m"client1"[39m -> [32m14L[39m
+      ),
+      traceId = [32m"892544785310560043"[39m,
+      opId = [32m3L[39m,
+      gId = [32m12290L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value3"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m236[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m29L[39m,
+        [32m"server3"[39m -> [32m29L[39m,
+        [32m"server4"[39m -> [32m36L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m24L[39m,
+        [32m"server1"[39m -> [32m31L[39m,
+        [32m"client1"[39m -> [32m26L[39m
+      ),
+      traceId = [32m"3300079945397763607"[39m,
+      opId = [32m3L[39m,
+      gId = [32m16386L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value3"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m270[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m33L[39m,
+        [32m"server3"[39m -> [32m33L[39m,
+        [32m"server4"[39m -> [32m45L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m36L[39m,
+        [32m"server1"[39m -> [32m36L[39m,
+        [32m"client1"[39m -> [32m24L[39m
+      ),
+      traceId = [32m"8186285963672789949"[39m,
+      opId = [32m5L[39m,
+      gId = [32m20482L[39m,
+      key = [32m"key1"[39m,
+      value = [32m""[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m291[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m54L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m41L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m29L[39m
+      ),
+      traceId = [32m"7910981375278900929"[39m,
+      opId = [32m6L[39m,
+      gId = [32m24578L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value1"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m304[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m59L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m39L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m36L[39m
+      ),
+      traceId = [32m"4307236955522859261"[39m,
+      opId = [32m5L[39m,
+      gId = [32m24579L[39m,
+      key = [32m"key1"[39m,
+      value = [32m""[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m324[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m64L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m39L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m41L[39m
+      ),
+      traceId = [32m"7985648209272934039"[39m,
+      opId = [32m6L[39m,
+      gId = [32m24580L[39m,
+      key = [32m"key2"[39m,
+      value = [32m"value1"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m353[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m41L[39m,
+        [32m"server3"[39m -> [32m41L[39m,
+        [32m"server4"[39m -> [32m73L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m51L[39m,
+        [32m"server1"[39m -> [32m46L[39m,
+        [32m"client1"[39m -> [32m39L[39m
+      ),
+      traceId = [32m"4606705055602942253"[39m,
+      opId = [32m8L[39m,
+      gId = [32m28674L[39m,
+      key = [32m"k0"[39m,
+      value = [32m"val0"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m387[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m45L[39m,
+        [32m"server3"[39m -> [32m45L[39m,
+        [32m"server4"[39m -> [32m82L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m49L[39m,
+        [32m"server1"[39m -> [32m51L[39m,
+        [32m"client1"[39m -> [32m51L[39m
+      ),
+      traceId = [32m"5903203566033749433"[39m,
+      opId = [32m8L[39m,
+      gId = [32m32770L[39m,
+      key = [32m"k0"[39m,
+      value = [32m"val0"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m420[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m49L[39m,
+        [32m"server3"[39m -> [32m49L[39m,
+        [32m"server4"[39m -> [32m91L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m61L[39m,
+        [32m"server1"[39m -> [32m56L[39m,
+        [32m"client1"[39m -> [32m49L[39m
+      ),
+      traceId = [32m"6824637342303172087"[39m,
+      opId = [32m10L[39m,
+      gId = [32m36866L[39m,
+      key = [32m"k1"[39m,
+      value = [32m"val1"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m451[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m53L[39m,
+        [32m"server3"[39m -> [32m53L[39m,
+        [32m"server4"[39m -> [32m100L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m59L[39m,
+        [32m"server1"[39m -> [32m61L[39m,
+        [32m"client1"[39m -> [32m61L[39m
+      ),
+      traceId = [32m"6454370072772859194"[39m,
+      opId = [32m10L[39m,
+      gId = [32m40962L[39m,
+      key = [32m"k1"[39m,
+      value = [32m"val1"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m482[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m57L[39m,
+        [32m"server3"[39m -> [32m57L[39m,
+        [32m"server4"[39m -> [32m109L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m71L[39m,
+        [32m"server1"[39m -> [32m66L[39m,
+        [32m"client1"[39m -> [32m59L[39m
+      ),
+      traceId = [32m"196691718296636535"[39m,
+      opId = [32m12L[39m,
+      gId = [32m45058L[39m,
+      key = [32m"k2"[39m,
+      value = [32m"val2"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m512[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m61L[39m,
+        [32m"server3"[39m -> [32m61L[39m,
+        [32m"server4"[39m -> [32m118L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m69L[39m,
+        [32m"server1"[39m -> [32m71L[39m,
+        [32m"client1"[39m -> [32m71L[39m
+      ),
+      traceId = [32m"1833508085254621130"[39m,
+      opId = [32m12L[39m,
+      gId = [32m49154L[39m,
+      key = [32m"k2"[39m,
+      value = [32m"val2"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m547[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m65L[39m,
+        [32m"server3"[39m -> [32m65L[39m,
+        [32m"server4"[39m -> [32m127L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m81L[39m,
+        [32m"server1"[39m -> [32m76L[39m,
+        [32m"client1"[39m -> [32m69L[39m
+      ),
+      traceId = [32m"2668238230753437281"[39m,
+      opId = [32m14L[39m,
+      gId = [32m53250L[39m,
+      key = [32m"k3"[39m,
+      value = [32m"val3"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m579[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m69L[39m,
+        [32m"server3"[39m -> [32m69L[39m,
+        [32m"server4"[39m -> [32m136L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m79L[39m,
+        [32m"server1"[39m -> [32m81L[39m,
+        [32m"client1"[39m -> [32m81L[39m
+      ),
+      traceId = [32m"8283405228153702514"[39m,
+      opId = [32m14L[39m,
+      gId = [32m57346L[39m,
+      key = [32m"k3"[39m,
+      value = [32m"val3"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m608[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m73L[39m,
+        [32m"server3"[39m -> [32m73L[39m,
+        [32m"server4"[39m -> [32m145L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m91L[39m,
+        [32m"server1"[39m -> [32m86L[39m,
+        [32m"client1"[39m -> [32m79L[39m
+      ),
+      traceId = [32m"8473562829419547269"[39m,
+      opId = [32m16L[39m,
+      gId = [32m61442L[39m,
+      key = [32m"k4"[39m,
+      value = [32m"val4"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m640[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m77L[39m,
+        [32m"server3"[39m -> [32m77L[39m,
+        [32m"server4"[39m -> [32m154L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m89L[39m,
+        [32m"server1"[39m -> [32m91L[39m,
+        [32m"client1"[39m -> [32m91L[39m
+      ),
+      traceId = [32m"5333151769781166816"[39m,
+      opId = [32m16L[39m,
+      gId = [32m65538L[39m,
+      key = [32m"k4"[39m,
+      value = [32m"val4"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m676[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m81L[39m,
+        [32m"server3"[39m -> [32m81L[39m,
+        [32m"server4"[39m -> [32m163L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m101L[39m,
+        [32m"server1"[39m -> [32m96L[39m,
+        [32m"client1"[39m -> [32m89L[39m
+      ),
+      traceId = [32m"5966560896434109551"[39m,
+      opId = [32m18L[39m,
+      gId = [32m69634L[39m,
+      key = [32m"k5"[39m,
+      value = [32m"val5"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m708[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m85L[39m,
+        [32m"server3"[39m -> [32m85L[39m,
+        [32m"server4"[39m -> [32m172L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m99L[39m,
+        [32m"server1"[39m -> [32m101L[39m,
+        [32m"client1"[39m -> [32m101L[39m
+      ),
+      traceId = [32m"5949657293181496073"[39m,
+      opId = [32m18L[39m,
+      gId = [32m73730L[39m,
+      key = [32m"k5"[39m,
+      value = [32m"val5"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m739[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m89L[39m,
+        [32m"server3"[39m -> [32m89L[39m,
+        [32m"server4"[39m -> [32m181L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m111L[39m,
+        [32m"server1"[39m -> [32m106L[39m,
+        [32m"client1"[39m -> [32m99L[39m
+      ),
+      traceId = [32m"2898688929992048275"[39m,
+      opId = [32m20L[39m,
+      gId = [32m77826L[39m,
+      key = [32m"k6"[39m,
+      value = [32m"val6"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m768[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m93L[39m,
+        [32m"server3"[39m -> [32m93L[39m,
+        [32m"server4"[39m -> [32m190L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m109L[39m,
+        [32m"server1"[39m -> [32m111L[39m,
+        [32m"client1"[39m -> [32m111L[39m
+      ),
+      traceId = [32m"6578182097918394181"[39m,
+      opId = [32m20L[39m,
+      gId = [32m81922L[39m,
+      key = [32m"k6"[39m,
+      value = [32m"val6"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m800[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m97L[39m,
+        [32m"server3"[39m -> [32m97L[39m,
+        [32m"server4"[39m -> [32m199L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m121L[39m,
+        [32m"server1"[39m -> [32m116L[39m,
+        [32m"client1"[39m -> [32m109L[39m
+      ),
+      traceId = [32m"5943828549963103672"[39m,
+      opId = [32m22L[39m,
+      gId = [32m86018L[39m,
+      key = [32m"k7"[39m,
+      value = [32m"val7"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m833[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m101L[39m,
+        [32m"server3"[39m -> [32m101L[39m,
+        [32m"server4"[39m -> [32m208L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m119L[39m,
+        [32m"server1"[39m -> [32m121L[39m,
+        [32m"client1"[39m -> [32m121L[39m
+      ),
+      traceId = [32m"7736224593410147704"[39m,
+      opId = [32m22L[39m,
+      gId = [32m90114L[39m,
+      key = [32m"k7"[39m,
+      value = [32m"val7"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m866[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m105L[39m,
+        [32m"server3"[39m -> [32m105L[39m,
+        [32m"server4"[39m -> [32m217L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m131L[39m,
+        [32m"server1"[39m -> [32m126L[39m,
+        [32m"client1"[39m -> [32m119L[39m
+      ),
+      traceId = [32m"5991681401608926842"[39m,
+      opId = [32m24L[39m,
+      gId = [32m94210L[39m,
+      key = [32m"k8"[39m,
+      value = [32m"val8"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m899[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m109L[39m,
+        [32m"server3"[39m -> [32m109L[39m,
+        [32m"server4"[39m -> [32m226L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m129L[39m,
+        [32m"server1"[39m -> [32m131L[39m,
+        [32m"client1"[39m -> [32m131L[39m
+      ),
+      traceId = [32m"4510356479693947342"[39m,
+      opId = [32m24L[39m,
+      gId = [32m98306L[39m,
+      key = [32m"k8"[39m,
+      value = [32m"val8"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m931[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m113L[39m,
+        [32m"server3"[39m -> [32m113L[39m,
+        [32m"server4"[39m -> [32m235L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m141L[39m,
+        [32m"server1"[39m -> [32m136L[39m,
+        [32m"client1"[39m -> [32m129L[39m
+      ),
+      traceId = [32m"556508480070331496"[39m,
+      opId = [32m26L[39m,
+      gId = [32m102402L[39m,
+      key = [32m"k9"[39m,
+      value = [32m"val9"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m961[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m117L[39m,
+        [32m"server3"[39m -> [32m117L[39m,
+        [32m"server4"[39m -> [32m244L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m139L[39m,
+        [32m"server1"[39m -> [32m141L[39m,
+        [32m"client1"[39m -> [32m141L[39m
+      ),
+      traceId = [32m"8158376920601494645"[39m,
+      opId = [32m26L[39m,
+      gId = [32m106498L[39m,
+      key = [32m"k9"[39m,
+      value = [32m"val9"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m994[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m121L[39m,
+        [32m"server3"[39m -> [32m121L[39m,
+        [32m"server4"[39m -> [32m253L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m151L[39m,
+        [32m"server1"[39m -> [32m146L[39m,
+        [32m"client1"[39m -> [32m139L[39m
+      ),
+      traceId = [32m"299193283751200225"[39m,
+      opId = [32m28L[39m,
+      gId = [32m110594L[39m,
+      key = [32m"k10"[39m,
+      value = [32m"val10"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m1027[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m125L[39m,
+        [32m"server3"[39m -> [32m125L[39m,
+        [32m"server4"[39m -> [32m262L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m149L[39m,
+        [32m"server1"[39m -> [32m151L[39m,
+        [32m"client1"[39m -> [32m151L[39m
+      ),
+      traceId = [32m"7725982564152744422"[39m,
+      opId = [32m28L[39m,
+      gId = [32m114690L[39m,
+      key = [32m"k10"[39m,
+      value = [32m"val10"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m1057[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m129L[39m,
+        [32m"server3"[39m -> [32m129L[39m,
+        [32m"server4"[39m -> [32m271L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m161L[39m,
+        [32m"server1"[39m -> [32m156L[39m,
+        [32m"client1"[39m -> [32m149L[39m
+      ),
+      traceId = [32m"2537246602649828466"[39m,
+      opId = [32m30L[39m,
+      gId = [32m118786L[39m,
+      key = [32m"k11"[39m,
+      value = [32m"val11"[39m
+    ),
+    [33mGetResultRecvd[39m(
+      lineNumber = [32m1090[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m133L[39m,
+        [32m"server3"[39m -> [32m133L[39m,
+...
+  PutResultRecvd/GetResultRecvd recorded by the same client := [33mListBuffer[39m(
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m163[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m21L[39m,
+        [32m"server3"[39m -> [32m21L[39m,
+        [32m"server4"[39m -> [32m18L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m14L[39m,
+        [32m"server1"[39m -> [32m21L[39m,
+        [32m"client1"[39m -> [32m16L[39m
+      ),
+      traceId = [32m"7720445977782997283"[39m,
+      opId = [32m1L[39m,
+      gId = [32m8192L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m163[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m21L[39m,
+        [32m"server3"[39m -> [32m21L[39m,
+        [32m"server4"[39m -> [32m18L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m14L[39m,
+        [32m"server1"[39m -> [32m21L[39m,
+        [32m"client1"[39m -> [32m16L[39m
+      ),
+      traceId = [32m"7720445977782997283"[39m,
+      opId = [32m1L[39m,
+      gId = [32m8192L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m217[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m29L[39m,
+        [32m"server3"[39m -> [32m29L[39m,
+        [32m"server4"[39m -> [32m31L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m24L[39m,
+        [32m"server1"[39m -> [32m31L[39m,
+        [32m"client1"[39m -> [32m21L[39m
+      ),
+      traceId = [32m"9073933654934781553"[39m,
+      opId = [32m2L[39m,
+      gId = [32m16384L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m284[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m37L[39m,
+        [32m"server3"[39m -> [32m37L[39m,
+        [32m"server4"[39m -> [32m51L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m39L[39m,
+        [32m"server1"[39m -> [32m41L[39m,
+        [32m"client1"[39m -> [32m31L[39m
+      ),
+      traceId = [32m"7038020943479817253"[39m,
+      opId = [32m4L[39m,
+      gId = [32m24576L[39m,
+      key = [32m"key2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m366[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m45L[39m,
+        [32m"server3"[39m -> [32m45L[39m,
+        [32m"server4"[39m -> [32m77L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m49L[39m,
+        [32m"server1"[39m -> [32m51L[39m,
+        [32m"client1"[39m -> [32m46L[39m
+      ),
+      traceId = [32m"1177217141282953907"[39m,
+      opId = [32m7L[39m,
+      gId = [32m32768L[39m,
+      key = [32m"k0"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m430[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m53L[39m,
+        [32m"server3"[39m -> [32m53L[39m,
+        [32m"server4"[39m -> [32m95L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m59L[39m,
+        [32m"server1"[39m -> [32m61L[39m,
+        [32m"client1"[39m -> [32m56L[39m
+      ),
+      traceId = [32m"5650580683873559120"[39m,
+      opId = [32m9L[39m,
+      gId = [32m40960L[39m,
+      key = [32m"k1"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m493[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m61L[39m,
+        [32m"server3"[39m -> [32m61L[39m,
+        [32m"server4"[39m -> [32m113L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m69L[39m,
+        [32m"server1"[39m -> [32m71L[39m,
+        [32m"client1"[39m -> [32m66L[39m
+      ),
+      traceId = [32m"4293821010063382646"[39m,
+      opId = [32m11L[39m,
+      gId = [32m49152L[39m,
+      key = [32m"k2"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m557[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m69L[39m,
+        [32m"server3"[39m -> [32m69L[39m,
+        [32m"server4"[39m -> [32m131L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m79L[39m,
+        [32m"server1"[39m -> [32m81L[39m,
+        [32m"client1"[39m -> [32m76L[39m
+      ),
+      traceId = [32m"4936520555331613387"[39m,
+      opId = [32m13L[39m,
+      gId = [32m57344L[39m,
+      key = [32m"k3"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m621[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m77L[39m,
+        [32m"server3"[39m -> [32m77L[39m,
+        [32m"server4"[39m -> [32m149L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m89L[39m,
+        [32m"server1"[39m -> [32m91L[39m,
+        [32m"client1"[39m -> [32m86L[39m
+      ),
+      traceId = [32m"9029257860033065911"[39m,
+      opId = [32m15L[39m,
+      gId = [32m65536L[39m,
+      key = [32m"k4"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m686[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m85L[39m,
+        [32m"server3"[39m -> [32m85L[39m,
+        [32m"server4"[39m -> [32m167L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m99L[39m,
+        [32m"server1"[39m -> [32m101L[39m,
+        [32m"client1"[39m -> [32m96L[39m
+      ),
+      traceId = [32m"8307930017092371403"[39m,
+      opId = [32m17L[39m,
+      gId = [32m73728L[39m,
+      key = [32m"k5"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m749[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m93L[39m,
+        [32m"server3"[39m -> [32m93L[39m,
+        [32m"server4"[39m -> [32m185L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m109L[39m,
+        [32m"server1"[39m -> [32m111L[39m,
+        [32m"client1"[39m -> [32m106L[39m
+      ),
+      traceId = [32m"3229085113829671241"[39m,
+      opId = [32m19L[39m,
+      gId = [32m81920L[39m,
+      key = [32m"k6"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m813[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m101L[39m,
+        [32m"server3"[39m -> [32m101L[39m,
+        [32m"server4"[39m -> [32m203L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m119L[39m,
+        [32m"server1"[39m -> [32m121L[39m,
+        [32m"client1"[39m -> [32m116L[39m
+      ),
+      traceId = [32m"934136435839948728"[39m,
+      opId = [32m21L[39m,
+      gId = [32m90112L[39m,
+      key = [32m"k7"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m878[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m109L[39m,
+        [32m"server3"[39m -> [32m109L[39m,
+        [32m"server4"[39m -> [32m221L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m129L[39m,
+        [32m"server1"[39m -> [32m131L[39m,
+        [32m"client1"[39m -> [32m126L[39m
+      ),
+      traceId = [32m"4648921412268842797"[39m,
+      opId = [32m23L[39m,
+      gId = [32m98304L[39m,
+      key = [32m"k8"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m942[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m117L[39m,
+        [32m"server3"[39m -> [32m117L[39m,
+        [32m"server4"[39m -> [32m239L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m139L[39m,
+        [32m"server1"[39m -> [32m141L[39m,
+        [32m"client1"[39m -> [32m136L[39m
+      ),
+      traceId = [32m"4217910553380170872"[39m,
+      opId = [32m25L[39m,
+      gId = [32m106496L[39m,
+      key = [32m"k9"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1007[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m125L[39m,
+        [32m"server3"[39m -> [32m125L[39m,
+        [32m"server4"[39m -> [32m257L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m149L[39m,
+        [32m"server1"[39m -> [32m151L[39m,
+        [32m"client1"[39m -> [32m146L[39m
+      ),
+      traceId = [32m"3146596096921478082"[39m,
+      opId = [32m27L[39m,
+      gId = [32m114688L[39m,
+      key = [32m"k10"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1070[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m133L[39m,
+        [32m"server3"[39m -> [32m133L[39m,
+        [32m"server4"[39m -> [32m275L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m159L[39m,
+        [32m"server1"[39m -> [32m161L[39m,
+        [32m"client1"[39m -> [32m156L[39m
+      ),
+      traceId = [32m"4909614957315776887"[39m,
+      opId = [32m29L[39m,
+      gId = [32m122880L[39m,
+      key = [32m"k11"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1134[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m141L[39m,
+        [32m"server3"[39m -> [32m141L[39m,
+        [32m"server4"[39m -> [32m293L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m169L[39m,
+        [32m"server1"[39m -> [32m171L[39m,
+        [32m"client1"[39m -> [32m166L[39m
+      ),
+      traceId = [32m"6590615536728472466"[39m,
+      opId = [32m31L[39m,
+      gId = [32m131072L[39m,
+      key = [32m"k12"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1197[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m149L[39m,
+        [32m"server3"[39m -> [32m149L[39m,
+        [32m"server4"[39m -> [32m311L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m179L[39m,
+        [32m"server1"[39m -> [32m181L[39m,
+        [32m"client1"[39m -> [32m176L[39m
+      ),
+      traceId = [32m"6888431350276701997"[39m,
+      opId = [32m33L[39m,
+      gId = [32m139264L[39m,
+      key = [32m"k13"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1261[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m157L[39m,
+        [32m"server3"[39m -> [32m157L[39m,
+        [32m"server4"[39m -> [32m329L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m189L[39m,
+        [32m"server1"[39m -> [32m191L[39m,
+        [32m"client1"[39m -> [32m186L[39m
+      ),
+      traceId = [32m"1556740316040900627"[39m,
+      opId = [32m35L[39m,
+      gId = [32m147456L[39m,
+      key = [32m"k14"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1327[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m165L[39m,
+        [32m"server3"[39m -> [32m165L[39m,
+        [32m"server4"[39m -> [32m347L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m199L[39m,
+        [32m"server1"[39m -> [32m201L[39m,
+        [32m"client1"[39m -> [32m196L[39m
+      ),
+      traceId = [32m"7156349330070145926"[39m,
+      opId = [32m37L[39m,
+      gId = [32m155648L[39m,
+      key = [32m"k15"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1391[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m173L[39m,
+        [32m"server3"[39m -> [32m173L[39m,
+        [32m"server4"[39m -> [32m365L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m209L[39m,
+        [32m"server1"[39m -> [32m211L[39m,
+        [32m"client1"[39m -> [32m206L[39m
+      ),
+      traceId = [32m"3142594817523672299"[39m,
+      opId = [32m39L[39m,
+      gId = [32m163840L[39m,
+      key = [32m"k16"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1454[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m181L[39m,
+        [32m"server3"[39m -> [32m181L[39m,
+        [32m"server4"[39m -> [32m383L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m219L[39m,
+        [32m"server1"[39m -> [32m221L[39m,
+        [32m"client1"[39m -> [32m216L[39m
+      ),
+      traceId = [32m"4506536438395155837"[39m,
+      opId = [32m41L[39m,
+      gId = [32m172032L[39m,
+      key = [32m"k17"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1518[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m189L[39m,
+        [32m"server3"[39m -> [32m189L[39m,
+        [32m"server4"[39m -> [32m401L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m229L[39m,
+        [32m"server1"[39m -> [32m231L[39m,
+        [32m"client1"[39m -> [32m226L[39m
+      ),
+      traceId = [32m"6776205108177963866"[39m,
+      opId = [32m43L[39m,
+      gId = [32m180224L[39m,
+      key = [32m"k18"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1582[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m197L[39m,
+        [32m"server3"[39m -> [32m197L[39m,
+        [32m"server4"[39m -> [32m419L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m239L[39m,
+        [32m"server1"[39m -> [32m241L[39m,
+        [32m"client1"[39m -> [32m236L[39m
+      ),
+      traceId = [32m"8116192970239349854"[39m,
+      opId = [32m45L[39m,
+      gId = [32m188416L[39m,
+      key = [32m"k19"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1645[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m205L[39m,
+        [32m"server3"[39m -> [32m205L[39m,
+        [32m"server4"[39m -> [32m437L[39m,
+        [32m"coord"[39m -> [32m47L[39m,
+        [32m"client2"[39m -> [32m249L[39m,
+        [32m"server1"[39m -> [32m251L[39m,
+        [32m"client1"[39m -> [32m246L[39m
+      ),
+      traceId = [32m"3289454695946944256"[39m,
+      opId = [32m47L[39m,
+      gId = [32m196608L[39m,
+      key = [32m"k20"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1774[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m205L[39m,
+        [32m"server3"[39m -> [32m205L[39m,
+        [32m"server4"[39m -> [32m437L[39m,
+        [32m"coord"[39m -> [32m72L[39m,
+        [32m"client2"[39m -> [32m277L[39m,
+        [32m"server1"[39m -> [32m294L[39m,
+        [32m"client1"[39m -> [32m264L[39m
+      ),
+      traceId = [32m"2232800433561706832"[39m,
+      opId = [32m49L[39m,
+      gId = [32m208896L[39m,
+      key = [32m"k21"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1852[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m205L[39m,
+        [32m"server3"[39m -> [32m205L[39m,
+        [32m"server4"[39m -> [32m437L[39m,
+        [32m"coord"[39m -> [32m72L[39m,
+        [32m"client2"[39m -> [32m297L[39m,
+        [32m"server1"[39m -> [32m333L[39m,
+        [32m"client1"[39m -> [32m284L[39m
+      ),
+      traceId = [32m"6739088964626487521"[39m,
+      opId = [32m51L[39m,
+      gId = [32m221184L[39m,
+      key = [32m"k22"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1882[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m205L[39m,
+        [32m"server3"[39m -> [32m205L[39m,
+        [32m"server4"[39m -> [32m437L[39m,
+        [32m"coord"[39m -> [32m72L[39m,
+        [32m"client2"[39m -> [32m307L[39m,
+        [32m"server1"[39m -> [32m348L[39m,
+        [32m"client1"[39m -> [32m294L[39m
+      ),
+      traceId = [32m"6731043173068170753"[39m,
+      opId = [32m53L[39m,
+      gId = [32m225280L[39m,
+      key = [32m"k23"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1933[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m205L[39m,
+        [32m"server3"[39m -> [32m205L[39m,
+        [32m"server4"[39m -> [32m437L[39m,
+        [32m"coord"[39m -> [32m72L[39m,
+        [32m"client2"[39m -> [32m317L[39m,
+        [32m"server1"[39m -> [32m373L[39m,
+        [32m"client1"[39m -> [32m304L[39m
+      ),
+      traceId = [32m"202357688257518146"[39m,
+      opId = [32m55L[39m,
+      gId = [32m237568L[39m,
+      key = [32m"k24"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m1961[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m205L[39m,
+        [32m"server3"[39m -> [32m205L[39m,
+        [32m"server4"[39m -> [32m437L[39m,
+        [32m"coord"[39m -> [32m72L[39m,
+        [32m"client2"[39m -> [32m327L[39m,
+        [32m"server1"[39m -> [32m388L[39m,
+        [32m"client1"[39m -> [32m314L[39m
+      ),
+      traceId = [32m"5743197125900979391"[39m,
+      opId = [32m57L[39m,
+      gId = [32m241664L[39m,
+      key = [32m"k25"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m2013[39m,
+      vectorClock = [33mHashMap[39m(
+        [32m"server2"[39m -> [32m205L[39m,
+        [32m"server3"[39m -> [32m205L[39m,
+        [32m"server4"[39m -> [32m437L[39m,
+        [32m"coord"[39m -> [32m72L[39m,
+        [32m"client2"[39m -> [32m337L[39m,
+        [32m"server1"[39m -> [32m413L[39m,
+        [32m"client1"[39m -> [32m324L[39m
+      ),
+      traceId = [32m"3766925449524963988"[39m,
+      opId = [32m59L[39m,
+      gId = [32m253952L[39m,
+      key = [32m"k26"[39m
+    ),
+    [33mPutResultRecvd[39m(
+      lineNumber = [32m2042[39m,
+...
+    [31m[1mfind a pair violating OpID-GID consistency[0m at /home/e/ericy676/cs416/a3/spec/a3spec.sc:699
+    contextually relevant values: [33mList[39m(
+      [33mPutResultRecvd[39m(
+        lineNumber = [32m1852[39m,
+        vectorClock = [33mHashMap[39m(
+          [32m"server2"[39m -> [32m205L[39m,
+          [32m"server3"[39m -> [32m205L[39m,
+          [32m"server4"[39m -> [32m437L[39m,
+          [32m"coord"[39m -> [32m72L[39m,
+          [32m"client2"[39m -> [32m297L[39m,
+          [32m"server1"[39m -> [32m333L[39m,
+          [32m"client1"[39m -> [32m284L[39m
+        ),
+        traceId = [32m"6739088964626487521"[39m,
+        opId = [32m51L[39m,
+        gId = [32m221184L[39m,
+        key = [32m"k22"[39m
+      ),
+      [33mGetResultRecvd[39m(
+        lineNumber = [32m1826[39m,
+        vectorClock = [33mHashMap[39m(
+          [32m"server2"[39m -> [32m205L[39m,
+          [32m"server3"[39m -> [32m205L[39m,
+          [32m"server4"[39m -> [32m437L[39m,
+          [32m"coord"[39m -> [32m72L[39m,
+          [32m"client2"[39m -> [32m292L[39m,
+          [32m"server1"[39m -> [32m321L[39m,
+          [32m"client1"[39m -> [32m279L[39m
+        ),
+        traceId = [32m"767886882544085596"[39m,
+        opId = [32m52L[39m,
+        gId = [32m212998L[39m,
+        key = [32m"k22"[39m,
+        value = [32m"val22"[39m
+      )
+    )

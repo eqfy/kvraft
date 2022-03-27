@@ -1,0 +1,11 @@
+{
+  "ServerID": 1,
+  "CoordAddr": "127.0.0.1:23002",
+  "ServerAddr": "127.0.0.1:21001",
+  "ServerServerAddr": "127.0.0.1:21011",
+  "ServerListenAddr": "127.0.0.1:21021",
+  "ClientListenAddr": "127.0.0.1:21031",
+  "TracingServerAddr": "127.0.0.1:23000",
+  "Secret": "",
+  "TracingIdentity": "server1"
+}
