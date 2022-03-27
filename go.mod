@@ -1,4 +1,4 @@
-module cs.ubc.ca/cpsc416/a3
+module cs.ubc.ca/cpsc416/kvraft
 
 go 1.16
 

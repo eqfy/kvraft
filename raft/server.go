@@ -1,4 +1,4 @@
-package chainedkv
+package raft
 
 import (
 	"errors"

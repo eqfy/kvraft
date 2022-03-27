@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"cs.ubc.ca/cpsc416/a3/chainedkv"
-	"cs.ubc.ca/cpsc416/a3/kvslib"
-	"cs.ubc.ca/cpsc416/a3/util"
+	"cs.ubc.ca/cpsc416/kvraft/kvslib"
+	"cs.ubc.ca/cpsc416/kvraft/raft"
+	"cs.ubc.ca/cpsc416/kvraft/util"
 	"github.com/DistributedClocks/tracing"
 )
 
@@ -17,7 +17,7 @@ func main() {
 	}
 	clientId := os.Args[1]
 
-	var config chainedkv.ClientConfig
+	var config raft.ClientConfig
 	err := util.ReadJSONConfig("config/client_config"+clientId+".json", &config)
 	util.CheckErr(err, "Error reading client config: %v\n", err)
 

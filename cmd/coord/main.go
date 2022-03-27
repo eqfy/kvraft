@@ -1,19 +1,19 @@
 package main
 
 import (
-	"cs.ubc.ca/cpsc416/a3/chainedkv"
-	"cs.ubc.ca/cpsc416/a3/util"
+	"cs.ubc.ca/cpsc416/kvraft/raft"
+	"cs.ubc.ca/cpsc416/kvraft/util"
 	"github.com/DistributedClocks/tracing"
 )
 
 func main() {
-	var config chainedkv.CoordConfig
+	var config raft.CoordConfig
 	util.ReadJSONConfig("config/coord_config.json", &config)
 	ctracer := tracing.NewTracer(tracing.TracerConfig{
 		ServerAddress:  config.TracingServerAddr,
 		TracerIdentity: config.TracingIdentity,
 		Secret:         config.Secret,
 	})
-	coord := chainedkv.NewCoord()
+	coord := raft.NewCoord()
 	coord.Start(config.ClientAPIListenAddr, config.ServerAPIListenAddr, config.LostMsgsThresh, config.NumServers, ctracer)
 }

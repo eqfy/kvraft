@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cs.ubc.ca/cpsc416/a3/util"
+	"cs.ubc.ca/cpsc416/kvraft/util"
 
 	"github.com/DistributedClocks/tracing"
 )
