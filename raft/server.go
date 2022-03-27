@@ -252,36 +252,52 @@ func (s *Server) JoinDoneReturnTokenTrace(req TokenRequest, res *bool) (err erro
 	return
 }
 
-func (s *Server) FindTailServer(coordReply JoinResponse, reply *ServerJoinAck) error {
-	/* receive tail server from coord node*/
-
-	/* check if tail is itself...*/
-	tailServAddr := coordReply.TailServer.ServerListenAddr
-	if coordReply.TailServer.ServerId != s.ServerId {
-		/* send my own listening address to tail server*/
-		request := InternalJoinRequest{s.ServerId, s.Config.ServerListenAddr, s.trace.GenerateToken()}
-		// fmt.Printf("Sending my own listen address to tail server %s\n", tailServAddr)
-		tailServ, err := rpc.Dial("tcp", tailServAddr)
-		util.CheckErr(err, "Can't connect to tail server: ")
-
-		var res *InternalJoinResponse
-		err = tailServ.Call("Server.Register", request, &res)
-		util.CheckErr(err, "Error from tail server connection: ")
-
-		s.tracer.ReceiveToken(res.Token)
-		/* Tail server acks, so set prev server to Tail*/
-		s.PrevServ = tailServAddr
-		fmt.Printf("I'm now the tail, and previous server is %s\n", s.PrevServ)
-		tailServ.Close()
+func (s *Server) FindServerStateOnStartup(coordReply JoinResponse, reply *ServerJoinAck) error {
+	if coordReply.Leader {
+		fmt.Println("I'm a leader.")
+	} else {
+		fmt.Println("I'm a follower.")
 	}
+	fmt.Printf("Peers: %v\n TermNumber: %v\n", coordReply.Peers, coordReply.Term)
 
 	s.trace.RecordAction(ServerJoined{s.ServerId})
 	reply.ServerId = s.ServerId
 	reply.Token = s.trace.GenerateToken()
 	joinComplete <- true
-	// joinComplete = true
 	return nil
 }
+
+//func (s *Server) FindTailServer(coordReply JoinResponse, reply *ServerJoinAck) error {
+//	/* receive tail server from coord node*/
+//
+//	/* check if tail is itself...*/
+//	tailServAddr := coordReply.TailServer.ServerListenAddr
+//	if coordReply.TailServer.ServerId != s.ServerId {
+//		/* send my own listening address to tail server*/
+//		request := InternalJoinRequest{s.ServerId, s.Config.ServerListenAddr, s.trace.GenerateToken()}
+//		// fmt.Printf("Sending my own listen address to tail server %s\n", tailServAddr)
+//		tailServ, err := rpc.Dial("tcp", tailServAddr)
+//		fmt.Println("Error when dialing tail servers: ", err.Error())
+//		util.CheckErr(err, "Can't connect to tail server: ")
+//
+//		var res *InternalJoinResponse
+//		err = tailServ.Call("Server.Register", request, &res)
+//		util.CheckErr(err, "Error from tail server connection: ")
+//
+//		s.tracer.ReceiveToken(res.Token)
+//		/* Tail server acks, so set prev server to Tail*/
+//		s.PrevServ = tailServAddr
+//		fmt.Printf("I'm now the tail, and previous server is %s\n", s.PrevServ)
+//		tailServ.Close()
+//	}
+//
+//	s.trace.RecordAction(ServerJoined{s.ServerId})
+//	reply.ServerId = s.ServerId
+//	reply.Token = s.trace.GenerateToken()
+//	joinComplete <- true
+//	// joinComplete = true
+//	return nil
+//}
 
 func (s *Server) UpdateGIdBackwardsProp(req BackwardsPropRequest, res *bool) (err error) {
 	/* set my gid to be requests' gid*/
