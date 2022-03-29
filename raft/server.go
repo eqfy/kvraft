@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
+	"os"
+
 	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/util"
 	"github.com/DistributedClocks/tracing"
-	"os"
 	// "cs.ubc.ca/cpsc416/a3/kvslib"
 	// "time"
 )
+
+// Tracing
 
 type ServerStart struct {
 	ServerId uint8
@@ -100,6 +103,8 @@ type GetResult struct {
 	Value    string
 }
 
+// State and RPC
+
 type ServerConfig struct {
 	ServerId          uint8
 	CoordAddr         string
@@ -112,16 +117,6 @@ type ServerConfig struct {
 	TracingIdentity   string
 }
 
-type Server struct {
-	// Server state may go here
-	ServerId uint8
-	Peers			[]ServerInfo
-	Config           Addr
-	trace            *tracing.Trace
-	tracer           *tracing.Tracer
-	fcheckAddr       string
-}
-
 type Addr struct {
 	CoordAddr        string
 	ServerAddr       string
@@ -129,16 +124,88 @@ type Addr struct {
 	ClientListenAddr string
 }
 
-func NewServer() *Server {
-	return &Server{}
+type Server struct {
+	// Server state may go here
+	ServerId   uint8
+	Peers      []ServerInfo
+	Config     Addr
+	trace      *tracing.Trace
+	tracer     *tracing.Tracer
+	fcheckAddr string
+
+	isLeader bool
+
+	// Raft Paper
+	// Persistent state
+	currentTerm uint32 // Might actually be unused
+	votedFor    uint8
+	log         []Entry
+	kv          map[string]string
+	// Volatile state
+	commitIndex uint64
+	lastApplied uint64
+	// Volatile state on leader
+	nextIndex  []uint64
+	matchIndex []uint64
 }
 
+// AppendEntries RPC
+type AppendEntriesArg struct {
+	term         uint32
+	leaderId     uint8
+	prevLogIndex uint64
+	prevLogTerm  uint32
+	entries      []Entry
+	leaderCommit uint64
+}
+
+type AppendEntriesReply struct {
+	term    uint32
+	success bool
+}
+
+// RequestVote RPC (Unused)
+type RequestVoteArg struct {
+	term         uint32
+	candidateId  uint8
+	lastLogIndex uint64
+	lastLogTerm  uint64
+}
+
+type RequestVoteReply struct {
+	term        uint32
+	voteGranted bool
+	lastLogTerm uint32
+}
+
+// Log entry definition
+type Entry struct {
+	term    uint32
+	command Command
+	index   uint64
+}
+
+type Command struct {
+	kind CommandKind
+	key  string
+	val  string
+}
+
+type CommandKind int
+
+const (
+	Put CommandKind = iota
+	Get
+)
+
+// Join procedure
 type JoinRequest struct {
 	ServerId         uint8
 	ServerAddr       string
 	ServerListenAddr string
 }
 
+// Client RPC Calls
 type GetRequest struct {
 	ClientId string
 	OpId     uint32
@@ -158,10 +225,14 @@ type GetResponse struct {
 type TokenRequest struct {
 	Token tracing.TracingToken
 }
+
 var joinComplete chan bool
 
+func NewServer() *Server {
+	return &Server{}
+}
+
 func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serverServerAddr string, serverListenAddr string, clientListenAddr string, strace *tracing.Tracer) error {
-	
 	/* initalize global server state*/
 	s.ServerId = serverId
 	s.Config = Addr{CoordAddr: coordAddr, ServerAddr: serverAddr, ServerListenAddr: serverListenAddr, ClientListenAddr: clientListenAddr}
@@ -316,7 +387,6 @@ func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
 	return nil
 }
 
-
 // NotifyServerFailure TEMPLATE FOR SERVER FAILURE PROTOCOL BETWEEN COORD-SERVER
 // Added this to check if rpc calls are behaving as intended
 func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *NotifyServerFailureAck) error {
@@ -327,4 +397,26 @@ func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *No
 	// 	cTrace.RecordAction(ServerFailRecvd{FailedServerId: servId})
 	// }
 	return errors.New("invalid notification msg")
+}
+
+func (s *Server) AppendEntries(arg AppendEntriesArg, reply AppendEntriesReply) error {
+	if arg.term < s.currentTerm {
+		reply.success = false
+		return nil
+	}
+	if s.log[arg.prevLogIndex].term != arg.prevLogTerm {
+		reply.success = false
+		return nil
+	}
+
+	// for i := len(s.log); i >= 0; i-- {
+	// 	for j := len(arg.entries); j >= 0; j-- {
+	// 		if s.log[i].index == arg.entries[j].index {
+	// 			if s.log[i].term != arg.entries[j].term {
+
+	// 			}
+	// 		}
+	// 	}
+	// }
+	return nil
 }
