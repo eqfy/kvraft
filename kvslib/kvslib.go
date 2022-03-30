@@ -102,6 +102,10 @@ type KVS struct {
 	putListenerIPPort   string
 	coordListenerIPPort string
 
+	// leader ports
+
+	leaderNodeIPPort string
+
 	// TCP Addrs
 	hsLocalTCPAddr *net.TCPAddr
 	tsLocalTCPAddr *net.TCPAddr
@@ -551,14 +555,15 @@ func (d *KVS) sender() {
 			util.PrintfYellow("In Get, before keepSending loop")
 			for keepSending {
 				util.PrintfYellow("In Get, inside keepSending loop")
-				d.tailServerLock.Lock()
+				//d.tailServerLock.Lock()
+				d.headServerLock.Lock()
 				util.PrintfYellow("In Get, after Lock, before call")
-				err = d.tsClientRPC.Call("Request.Get", getReq, &getRes)
+				err = d.hsClientRPC.Call("Request.Get", getReq, &getRes)
 				util.PrintfYellow("In Get, after Lock, after call")
-				d.tailServerLock.Unlock()
+				d.headServerLock.Unlock()
 				util.PrintfYellow("In Get, after unlock")
 				if err != nil { // will now wait for head server to have finished reconfiguring
-					<-d.tailReconfiguredDone
+					<-d.headReconfiguredDone
 				} else {
 					keepSending = false
 				}
@@ -619,11 +624,12 @@ func (cnl *CoordListener) ChangeHeadServer(newServerIPPort string, isDone *bool)
 	return nil
 }
 
+/*
 func (cnl *CoordListener) ChangeTailServer(newServerIPPort string, isDone *bool) error {
 	cnl.ServerFailChan <- ServerFail{Tail, newServerIPPort}
 	*isDone = true
 	return nil
-}
+}*/
 
 func checkCriticalErr(origErr error, errStartStr string) error {
 	var newErr error = nil
