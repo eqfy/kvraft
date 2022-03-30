@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"sort"
 
 	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/util"
@@ -400,23 +401,58 @@ func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *No
 }
 
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply AppendEntriesReply) error {
+	// Ensure that the arg entries are in ASC order according to index
+	sort.Slice(arg.entries, func(i, j int) bool {
+		return arg.entries[i].index < arg.entries[j].index
+	})
+
+	// 1. Reply false if term < currentTerm (§5.1)
 	if arg.term < s.currentTerm {
 		reply.success = false
 		return nil
 	}
+
+	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
 	if s.log[arg.prevLogIndex].term != arg.prevLogTerm {
 		reply.success = false
 		return nil
 	}
 
-	// for i := len(s.log); i >= 0; i-- {
-	// 	for j := len(arg.entries); j >= 0; j-- {
-	// 		if s.log[i].index == arg.entries[j].index {
-	// 			if s.log[i].term != arg.entries[j].term {
+	// 3. If an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it (§5.3)
+	deleteStartIndex := len(s.log)
+	appendStartIndex := len(arg.entries)
+	for i := 0; i < len(arg.entries); i++ {
+		j := len(s.log) - 1
+		for ; j >= 0; j-- {
+			if arg.entries[i].index == arg.entries[j].index &&
+				arg.entries[i].term != arg.entries[j].term {
+				if j < deleteStartIndex {
+					deleteStartIndex = j
+				}
+				if appendStartIndex == 0 {
+					appendStartIndex = i
+				}
+				continue
+			}
+		}
+		if appendStartIndex == 0 && j == 0 { // entry not found in the log
+			appendStartIndex = i
+		}
+	}
+	s.log = s.log[:deleteStartIndex]
 
-	// 			}
-	// 		}
-	// 	}
-	// }
+	// 4. Append any new entries not already in the log
+	s.log = append(s.log, arg.entries[appendStartIndex:]...)
+
+	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
+	if arg.leaderCommit > s.commitIndex {
+		if arg.leaderCommit < s.log[len(s.log)-1].index {
+			s.commitIndex = arg.leaderCommit
+		} else {
+			s.commitIndex = s.log[len(s.log)-1].index
+		}
+	}
+	reply.success = true
+	reply.term = arg.term
 	return nil
 }
