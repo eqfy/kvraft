@@ -323,9 +323,11 @@ func joinOnStartup(s *Server) {
 func (s *Server) FindServerStateOnStartup(coordReply JoinResponse, reply *ServerJoinAck) error {
 	if coordReply.Leader {
 		fmt.Println("I'm a leader.")
+		s.isLeader = true
 		s.runLeader <- true
 	} else {
 		fmt.Println("I'm a follower.")
+		s.isLeader = false
 		s.runFollower <- true
 	}
 	s.Peers = coordReply.Peers
@@ -645,6 +647,7 @@ func (s *Server) applyEntry(entry Entry) error {
 }
 
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
+	// FIXME maybe instead of doing this, we can just look at s.isLeader
 	<-s.appendEntriesCanRespond
 	// Ensure that the arg entries are in ASC order according to index
 	sort.Slice(arg.entries, func(i, j int) bool {
@@ -669,18 +672,21 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	for i := 0; i < len(arg.entries); i++ {
 		j := len(s.log) - 1
 		for ; j >= 0; j-- {
-			if arg.entries[i].index == arg.entries[j].index &&
-				arg.entries[i].term != arg.entries[j].term {
-				if j < deleteStartIndex {
-					deleteStartIndex = j
+			if arg.entries[i].index == arg.entries[j].index {
+				if arg.entries[i].term != arg.entries[j].term {
+					if j < deleteStartIndex {
+						deleteStartIndex = j
+					}
+					if i < appendStartIndex {
+						appendStartIndex = i
+					}
 				}
-				if appendStartIndex == 0 {
-					appendStartIndex = i
-				}
-				continue
+				// else index and term match, do nothing
+				break
 			}
 		}
-		if appendStartIndex == 0 && j == 0 { // entry not found in the log
+		if i < appendStartIndex && j < 0 { // entry not found in the log
+			deleteStartIndex = 0
 			appendStartIndex = i
 		}
 	}
