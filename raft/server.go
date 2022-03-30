@@ -266,8 +266,8 @@ func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serv
 	<-joinComplete
 
 	/* Join complete, ready to take client requests*/
-	listenForClient(s)
 	go s.runRaft()
+	listenForClient(s)
 
 	return nil
 }
@@ -616,13 +616,15 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			s.currentTerm = newTerm
 			s.runFollower <- true
 			s.runLeader <- false
-			continue
+			return
 		case clientCommand := <-s.commandFromClient:
 			s.log = append(s.log, Entry{
 				term:    s.currentTerm,
 				command: clientCommand.command,
 				index:   uint64(len(s.log)),
 			})
+			// TODO send appendEntries to all followers
+			// Commit the entry once most followers responded?
 			clientCommand.done <- true
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
@@ -636,10 +638,10 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 func (s *Server) applyEntry(entry Entry) error {
 	switch entry.command.kind {
 	case Put:
-		// TODO lock this
+		// TODO lock this and return result of put
 		s.kv[entry.command.key] = entry.command.val
 	case Get:
-		// do nothing
+		// TODO return result of get
 	default:
 		return fmt.Errorf("unable to apply entry %v", entry)
 	}
@@ -649,10 +651,19 @@ func (s *Server) applyEntry(entry Entry) error {
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
 	// FIXME maybe instead of doing this, we can just look at s.isLeader
 	<-s.appendEntriesCanRespond
+
 	// Ensure that the arg entries are in ASC order according to index
 	sort.Slice(arg.entries, func(i, j int) bool {
 		return arg.entries[i].index < arg.entries[j].index
 	})
+
+	// Ensure that the arg entries are consecutive
+	for i := 1; i < len(arg.entries); i++ {
+		if arg.entries[i-1].index+1 != arg.entries[i].index {
+			reply.success = false
+			return fmt.Errorf("arg entries should be consecutive, %v", arg.entries)
+		}
+	}
 
 	// 1. Reply false if term < currentTerm (§5.1)
 	if arg.term < s.currentTerm {
@@ -661,6 +672,11 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	}
 
 	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
+	if int(arg.prevLogIndex) >= len(s.log) {
+		// FIXME might not be correct handling of this case
+		reply.success = false
+		return fmt.Errorf("saw an out of bounds prevLogIndex %v", arg.prevLogIndex)
+	}
 	if s.log[arg.prevLogIndex].term != arg.prevLogTerm {
 		reply.success = false
 		return nil
@@ -670,27 +686,20 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	deleteStartIndex := len(s.log)
 	appendStartIndex := len(arg.entries)
 	for i := 0; i < len(arg.entries); i++ {
-		j := len(s.log) - 1
-		for ; j >= 0; j-- {
-			if arg.entries[i].index == arg.entries[j].index {
-				if arg.entries[i].term != arg.entries[j].term {
-					if j < deleteStartIndex {
-						deleteStartIndex = j
-					}
-					if i < appendStartIndex {
-						appendStartIndex = i
-					}
-				}
-				// else index and term match, do nothing
-				break
+		currEntry := arg.entries[i]
+		if int(currEntry.index) >= len(s.log) {
+			if i < appendStartIndex {
+				appendStartIndex = i
 			}
-		}
-		if i < appendStartIndex && j < 0 { // entry not found in the log
-			deleteStartIndex = 0
+			break
+		} else if currEntry.term != s.log[currEntry.index].term ||
+			currEntry.command != s.log[currEntry.index].command {
+			deleteStartIndex = int(currEntry.index)
 			appendStartIndex = i
+			break
 		}
 	}
-	s.log = s.log[deleteStartIndex:]
+	s.log = s.log[:deleteStartIndex]
 
 	// 4. Append any new entries not already in the log
 	s.log = append(s.log, arg.entries[appendStartIndex:]...)
