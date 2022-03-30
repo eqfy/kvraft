@@ -684,7 +684,7 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 			appendStartIndex = i
 		}
 	}
-	s.log = s.log[:deleteStartIndex]
+	s.log = s.log[deleteStartIndex:]
 
 	// 4. Append any new entries not already in the log
 	s.log = append(s.log, arg.entries[appendStartIndex:]...)
