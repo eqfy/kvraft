@@ -476,30 +476,6 @@ func (s *Server) runRaft() {
 	}
 }
 
-// FIXME Probably won't use this, for simplicity just duplicate the logic here in follower, candidate and leader
-func (s *Server) raftAllServer(errorChan chan<- error) {
-	var err error
-
-	for {
-		select {
-		case commitIndex := <-s.commitIndexUpdated:
-			if commitIndex > s.lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
-				if err != nil {
-					errorChan <- err
-				}
-			}
-		case lastApplied := <-s.lastAppliedUpdated:
-			if s.commitIndex > lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
-				if err != nil {
-					errorChan <- err
-				}
-			}
-		}
-	}
-}
-
 func (s *Server) raftFollower(errorChan chan<- error) {
 	/*
 		- Respond to RPCs from candidates and leaders
