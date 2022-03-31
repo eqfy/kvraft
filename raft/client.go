@@ -5,7 +5,6 @@ type ClientConfig struct {
 	CoordIPPort           string
 	LocalCoordIPPort      string
 	LocalHeadServerIPPort string
-	LocalTailServerIPPort string
 	ChCapacity            int
 	TracingServerAddr     string
 	Secret                []byte
