@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"net"
 	"net/rpc"
+	"os"
+	"sort"
+
 	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/util"
 	"github.com/DistributedClocks/tracing"
-	"os"
-	// "cs.ubc.ca/cpsc416/a3/kvslib"
-	// "time"
 )
+
+// Tracing
 
 type ServerStart struct {
 	ServerId uint8
@@ -100,6 +102,8 @@ type GetResult struct {
 	Value    string
 }
 
+// State and RPC
+
 type ServerConfig struct {
 	ServerId          uint8
 	CoordAddr         string
@@ -112,16 +116,6 @@ type ServerConfig struct {
 	TracingIdentity   string
 }
 
-type Server struct {
-	// Server state may go here
-	ServerId uint8
-	Peers			[]ServerInfo
-	Config           Addr
-	trace            *tracing.Trace
-	tracer           *tracing.Tracer
-	fcheckAddr       string
-}
-
 type Addr struct {
 	CoordAddr        string
 	ServerAddr       string
@@ -129,16 +123,112 @@ type Addr struct {
 	ClientListenAddr string
 }
 
-func NewServer() *Server {
-	return &Server{}
+type Server struct {
+	// Server state may go here
+	ServerId   uint8
+	Peers      []ServerInfo
+	Config     Addr
+	trace      *tracing.Trace
+	tracer     *tracing.Tracer
+	fcheckAddr string
+
+	isLeader bool
+
+	// Raft Paper
+	// Persistent state
+	currentTerm uint32 // Might actually be unused
+	votedFor    uint8
+	log         []Entry
+	kv          map[string]string
+	// Volatile state
+	commitIndex uint64
+	lastApplied uint64
+	// Volatile state on leader
+	nextIndex  []uint64
+	matchIndex []uint64
+
+	// all servers
+	commitIndexUpdated               chan uint64
+	lastAppliedUpdated               chan uint64
+	rpcGotTermGreaterThanCurrentTerm chan uint32
+
+	// follower
+	appendEntriesCanRespond chan bool
+	appendEntriesDone       chan bool
+	runFollower             chan bool
+
+	// candidate
+	runCandidate chan bool
+
+	// leader
+	commandFromClient                    chan ClientCommand
+	followerLogIndexGreaterThanNextIndex chan bool // probably follower info
+	existsInterestingN                   chan bool
+	runLeader                            chan bool
 }
 
+// AppendEntries RPC
+type AppendEntriesArg struct {
+	term         uint32
+	leaderId     uint8
+	prevLogIndex uint64
+	prevLogTerm  uint32
+	entries      []Entry
+	leaderCommit uint64
+}
+
+type AppendEntriesReply struct {
+	term    uint32
+	success bool
+}
+
+// RequestVote RPC (Unused)
+type RequestVoteArg struct {
+	term         uint32
+	candidateId  uint8
+	lastLogIndex uint64
+	lastLogTerm  uint64
+}
+
+type RequestVoteReply struct {
+	term        uint32
+	voteGranted bool
+	lastLogTerm uint32
+}
+
+// Log entry definition
+type Entry struct {
+	term    uint32
+	command Command
+	index   uint64
+}
+
+type ClientCommand struct {
+	command Command
+	done    chan bool
+}
+
+type Command struct {
+	kind CommandKind
+	key  string
+	val  string
+}
+
+type CommandKind int
+
+const (
+	Put CommandKind = iota
+	Get
+)
+
+// Join procedure
 type JoinRequest struct {
 	ServerId         uint8
 	ServerAddr       string
 	ServerListenAddr string
 }
 
+// Client RPC Calls
 type GetRequest struct {
 	ClientId string
 	OpId     uint32
@@ -158,16 +248,15 @@ type GetResponse struct {
 type TokenRequest struct {
 	Token tracing.TracingToken
 }
+
 var joinComplete chan bool
 
+func NewServer() *Server {
+	return &Server{}
+}
+
 func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serverServerAddr string, serverListenAddr string, clientListenAddr string, strace *tracing.Tracer) error {
-	
-	/* initalize global server state*/
-	s.ServerId = serverId
-	s.Config = Addr{CoordAddr: coordAddr, ServerAddr: serverAddr, ServerListenAddr: serverListenAddr, ClientListenAddr: clientListenAddr}
-	s.trace = strace.CreateTrace()
-	s.tracer = strace
-	joinComplete = make(chan bool)
+	s.initServerState(serverId, coordAddr, serverAddr, serverServerAddr, serverListenAddr, clientListenAddr, strace)
 	s.trace.RecordAction(ServerStart{serverId})
 
 	go startFcheck(serverAddr, int(serverId), s)
@@ -177,9 +266,42 @@ func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serv
 	<-joinComplete
 
 	/* Join complete, ready to take client requests*/
+	go s.runRaft()
 	listenForClient(s)
 
 	return nil
+}
+
+/* initalize server state*/
+func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr string, serverServerAddr string, serverListenAddr string, clientListenAddr string, strace *tracing.Tracer) {
+	s.ServerId = serverId
+	s.Config = Addr{CoordAddr: coordAddr, ServerAddr: serverAddr, ServerListenAddr: serverListenAddr, ClientListenAddr: clientListenAddr}
+	s.trace = strace.CreateTrace()
+	s.tracer = strace
+
+	// raft persistent state
+	s.kv = make(map[string]string)
+
+	// join sync
+	joinComplete = make(chan bool)
+
+	// all server sync
+	s.commitIndexUpdated = make(chan uint64)
+	s.lastAppliedUpdated = make(chan uint64)
+	s.rpcGotTermGreaterThanCurrentTerm = make(chan uint32)
+
+	// follower sync
+	s.appendEntriesCanRespond = make(chan bool)
+	s.appendEntriesDone = make(chan bool)
+	s.runFollower = make(chan bool, 1)
+
+	// candidate sync
+	s.runCandidate = make(chan bool, 1)
+
+	// leader sync
+	s.commandFromClient = make(chan ClientCommand)
+	s.runLeader = make(chan bool, 1)
+
 }
 
 func joinOnStartup(s *Server) {
@@ -201,8 +323,12 @@ func joinOnStartup(s *Server) {
 func (s *Server) FindServerStateOnStartup(coordReply JoinResponse, reply *ServerJoinAck) error {
 	if coordReply.Leader {
 		fmt.Println("I'm a leader.")
+		s.isLeader = true
+		s.runLeader <- true
 	} else {
 		fmt.Println("I'm a follower.")
+		s.isLeader = false
+		s.runFollower <- true
 	}
 	s.Peers = coordReply.Peers
 	fmt.Printf("Peers: %v\n TermNumber: %v\n", coordReply.Peers, coordReply.Term)
@@ -316,7 +442,6 @@ func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
 	return nil
 }
 
-
 // NotifyServerFailure TEMPLATE FOR SERVER FAILURE PROTOCOL BETWEEN COORD-SERVER
 // Added this to check if rpc calls are behaving as intended
 func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *NotifyServerFailureAck) error {
@@ -327,4 +452,244 @@ func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *No
 	// 	cTrace.RecordAction(ServerFailRecvd{FailedServerId: servId})
 	// }
 	return errors.New("invalid notification msg")
+}
+
+// TODO
+func (s *Server) Get(arg interface{}, resp interface{}) {
+
+}
+
+// TODO
+func (s *Server) Put(arg interface{}, resp interface{}) {
+
+}
+
+func (s *Server) runRaft() {
+	serverErrorChan := make(chan error)
+	go s.raftFollower(serverErrorChan)
+	// go s.raftCandidate(serverErrorChan)
+	go s.raftLeader(serverErrorChan)
+
+	for {
+		err := <-serverErrorChan
+		util.PrintlnRed("error running raft protocal %v", err)
+	}
+}
+
+func (s *Server) raftFollower(errorChan chan<- error) {
+	/*
+		- Respond to RPCs from candidates and leaders
+		- If election timeout elapses without receiving AppendEntries
+		RPC from current leader or granting vote to candidate:
+		convert to candidate (ELECTION)
+	*/
+
+	for {
+		canRunFollower := <-s.runFollower
+		if canRunFollower {
+			s.raftFollowerLoop(errorChan)
+		}
+	}
+
+}
+
+func (s *Server) raftFollowerLoop(errorChan chan<- error) {
+	var err error
+
+	s.appendEntriesCanRespond <- true
+	for {
+		select {
+		case canRunFollower := <-s.runFollower:
+			if !canRunFollower {
+				return
+			}
+		case commitIndex := <-s.commitIndexUpdated:
+			if commitIndex > s.lastApplied {
+				err = s.applyEntry(s.log[s.lastApplied])
+				if err != nil {
+					errorChan <- err
+				}
+			}
+		case lastApplied := <-s.lastAppliedUpdated:
+			if s.commitIndex > lastApplied {
+				err = s.applyEntry(s.log[s.lastApplied])
+				if err != nil {
+					errorChan <- err
+				}
+			}
+		case <-s.appendEntriesDone:
+			s.appendEntriesCanRespond <- true
+		}
+
+	}
+}
+
+func (s *Server) raftCandidate(errorChan chan<- error) {}
+
+func (s *Server) raftCandidateLoop(errorChan chan<- error) {
+	/*
+		(ELECTION)
+		- On conversion to candidate, start election:
+		- Increment currentTerm
+		   - Vote for self
+		   - Reset election timer
+		   - Send RequestVote RPCs to all other servers
+		- If votes received from majority of servers: become leader
+		- If AppendEntries RPC received from new leader: convert to follower
+		- If election timeout elapses: start new election
+	*/
+}
+
+func (s *Server) raftLeader(errorChan chan<- error) {
+	for {
+		canRunLeader := <-s.runLeader
+		if canRunLeader {
+			s.raftLeaderLoop(errorChan)
+		}
+	}
+}
+
+func (s *Server) raftLeaderLoop(errorChan chan<- error) {
+	/*
+		- Upon election: send initial empty AppendEntries RPCs
+		(heartbeat) to each server; repeat during idle periods to
+		prevent election timeouts (§5.2) (ELECTION)
+		- If command received from client: append entry to local log,
+		respond after entry applied to state machine (§5.3)
+		- If last log index ≥ nextIndex for a follower: send
+		AppendEntries RPC with log entries starting at nextIndex
+			- If successful: update nextIndex and matchIndex for
+			follower (§5.3)
+			- If AppendEntries fails because of log inconsistency:
+			decrement nextIndex and retry (§5.3)
+		- If there exists an N such that N > commitIndex, a majority
+		of matchIndex[i] ≥ N, and log[N].term == currentTerm:
+		set commitIndex = N (§5.3, §5.4)
+	*/
+
+	var err error
+	for {
+		select {
+		case canRunLeader := <-s.runLeader:
+			if !canRunLeader {
+				return
+			}
+		case commitIndex := <-s.commitIndexUpdated:
+			if commitIndex > s.lastApplied {
+				err = s.applyEntry(s.log[s.lastApplied])
+				if err != nil {
+					errorChan <- err
+				}
+			}
+		case lastApplied := <-s.lastAppliedUpdated:
+			if s.commitIndex > lastApplied {
+				err = s.applyEntry(s.log[s.lastApplied])
+				if err != nil {
+					errorChan <- err
+				}
+			}
+		case newTerm := <-s.rpcGotTermGreaterThanCurrentTerm:
+			s.currentTerm = newTerm
+			s.runFollower <- true
+			s.runLeader <- false
+			return
+		case clientCommand := <-s.commandFromClient:
+			s.log = append(s.log, Entry{
+				term:    s.currentTerm,
+				command: clientCommand.command,
+				index:   uint64(len(s.log)),
+			})
+			// TODO send appendEntries to all followers
+			// Commit the entry once most followers responded?
+			clientCommand.done <- true
+		case <-s.followerLogIndexGreaterThanNextIndex:
+			// TODO
+		case <-s.existsInterestingN:
+			// TODO
+		}
+	}
+
+}
+
+func (s *Server) applyEntry(entry Entry) error {
+	switch entry.command.kind {
+	case Put:
+		// TODO lock this and return result of put
+		s.kv[entry.command.key] = entry.command.val
+	case Get:
+		// TODO return result of get
+	default:
+		return fmt.Errorf("unable to apply entry %v", entry)
+	}
+	return nil
+}
+
+func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
+	// FIXME maybe instead of doing this, we can just look at s.isLeader
+	<-s.appendEntriesCanRespond
+
+	// Ensure that the arg entries are in ASC order according to index
+	sort.Slice(arg.entries, func(i, j int) bool {
+		return arg.entries[i].index < arg.entries[j].index
+	})
+
+	// Ensure that the arg entries are consecutive
+	for i := 1; i < len(arg.entries); i++ {
+		if arg.entries[i-1].index+1 != arg.entries[i].index {
+			reply.success = false
+			return fmt.Errorf("arg entries should be consecutive, %v", arg.entries)
+		}
+	}
+
+	// 1. Reply false if term < currentTerm (§5.1)
+	if arg.term < s.currentTerm {
+		reply.success = false
+		return nil
+	}
+
+	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
+	if int(arg.prevLogIndex) >= len(s.log) {
+		// FIXME might not be correct handling of this case
+		reply.success = false
+		return fmt.Errorf("saw an out of bounds prevLogIndex %v", arg.prevLogIndex)
+	}
+	if s.log[arg.prevLogIndex].term != arg.prevLogTerm {
+		reply.success = false
+		return nil
+	}
+
+	// 3. If an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it (§5.3)
+	deleteStartIndex := len(s.log)
+	appendStartIndex := len(arg.entries)
+	for i := 0; i < len(arg.entries); i++ {
+		currEntry := arg.entries[i]
+		if int(currEntry.index) >= len(s.log) {
+			if i < appendStartIndex {
+				appendStartIndex = i
+			}
+			break
+		} else if currEntry.term != s.log[currEntry.index].term ||
+			currEntry.command != s.log[currEntry.index].command {
+			deleteStartIndex = int(currEntry.index)
+			appendStartIndex = i
+			break
+		}
+	}
+	s.log = s.log[:deleteStartIndex]
+
+	// 4. Append any new entries not already in the log
+	s.log = append(s.log, arg.entries[appendStartIndex:]...)
+
+	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
+	if arg.leaderCommit > s.commitIndex {
+		if arg.leaderCommit < s.log[len(s.log)-1].index {
+			s.commitIndex = arg.leaderCommit
+		} else {
+			s.commitIndex = s.log[len(s.log)-1].index
+		}
+	}
+	reply.success = true
+	reply.term = arg.term
+	s.appendEntriesDone <- true
+	return nil
 }
