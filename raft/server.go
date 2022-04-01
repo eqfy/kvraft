@@ -209,7 +209,7 @@ type Entry struct {
 
 type ClientCommand struct {
 	command Command
-	done    chan bool
+	done    chan Command
 }
 
 type Command struct {
@@ -467,20 +467,23 @@ func (s *Server) Get(arg GetRequest, resp GetResponse) {
 		Key:      arg.Key,
 	})
 
+	done := make(chan Command, 1)
+
 	clientCommand := ClientCommand{
 		command: Command{
 			kind: Get,
 			key:  arg.Key,
 		},
-		done: make(chan bool, 1),
+		done: done,
 	}
 	s.commandFromClient <- clientCommand
-	<-clientCommand.done
+	command := <-clientCommand.done
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
-	resp.Key = arg.Key
-	resp.Value = s.kv[arg.Key]
+	//TODO replace
+	resp.Key = command.key
+	resp.Value = command.val
 	resp.Token = gtrace.GenerateToken()
 }
 
@@ -494,23 +497,23 @@ func (s *Server) Put(arg PutRequest, resp PutResponse) {
 		Value:    arg.Value,
 	})
 
+	done := make(chan Command, 1)
+
 	clientCommand := ClientCommand{
 		command: Command{
 			kind: Put,
 			key:  arg.Key,
 			val:  arg.Value,
 		},
-		done: make(chan bool, 1),
+		done: done,
 	}
 	s.commandFromClient <- clientCommand
-	<-clientCommand.done
+	command := <-clientCommand.done
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
-	resp.Key = arg.Key
-	s.L.Lock()
-	resp.Value = s.kv[arg.Key]
-	s.L.Unlock()
+	resp.Key = command.key
+	resp.Value = command.val
 	resp.Token = ptrace.GenerateToken()
 }
 
@@ -555,14 +558,14 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 			}
 		case commitIndex := <-s.commitIndexUpdated:
 			if commitIndex > s.lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
 			}
 		case lastApplied := <-s.lastAppliedUpdated:
 			if s.commitIndex > lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
@@ -626,14 +629,14 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			}
 		case commitIndex := <-s.commitIndexUpdated:
 			if commitIndex > s.lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
 			}
 		case lastApplied := <-s.lastAppliedUpdated:
 			if s.commitIndex > lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
@@ -651,7 +654,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			})
 			// TODO send appendEntries to all followers
 			// Commit the entry once most followers responded?
-			clientCommand.done <- true
+			clientCommand.done <- clientCommand.command
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
 		case <-s.existsInterestingN:
@@ -661,19 +664,25 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
-func (s *Server) applyEntry(entry Entry) error {
+func (s *Server) applyEntry(entry Entry) (Command, error) {
 	switch entry.command.kind {
 	case Put:
 		// TODO lock this and return result of put
 		s.L.Lock()
 		s.kv[entry.command.key] = entry.command.val
 		s.L.Unlock()
+		return Command{kind: Get, key: entry.command.key, val: entry.command.val}, nil
 	case Get:
 		// TODO return result of get
+		command := Command{kind: Get, key: entry.command.key}
+		s.L.Lock()
+		command.val = s.kv[entry.command.key]
+		s.L.Unlock()
+		return command, nil
 	default:
-		return fmt.Errorf("unable to apply entry %v", entry)
+		return Command{}, fmt.Errorf("unable to apply entry %v", entry)
 	}
-	return nil
+	return Command{}, nil
 }
 
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
