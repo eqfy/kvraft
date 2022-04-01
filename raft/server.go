@@ -505,14 +505,12 @@ func (s *Server) Put(arg PutRequest, resp PutResponse) {
 	s.commandFromClient <- clientCommand
 	<-clientCommand.done
 
-	s.L.Lock()
-	s.kv[arg.Key] = arg.Value
-	s.L.Unlock()
-
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
 	resp.Key = arg.Key
-	resp.Value = arg.Value
+	s.L.Lock()
+	resp.Value = s.kv[arg.Key]
+	s.L.Unlock()
 	resp.Token = ptrace.GenerateToken()
 }
 
