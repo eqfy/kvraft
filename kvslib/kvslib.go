@@ -49,11 +49,11 @@ type GetResultRecvd struct {
 	Value string
 }
 
-type HeadReq struct {
+type LeaderReq struct {
 	ClientId string
 }
 
-type HeadResRecvd struct {
+type LeaderResRecvd struct {
 	ClientId string
 	ServerId uint8
 }
@@ -97,19 +97,23 @@ type KVS struct {
 	resRecvd  map[uint32]interface{}
 
 	// IP & ports
-	headServerIPPort    string
-	tailServerIPPort    string
+
+	//leaderServerIPPort    string
+
 	putListenerIPPort   string
 	coordListenerIPPort string
 
+	// leader ports
+
+	leaderNodeIPPort string
+
 	// TCP Addrs
-	hsLocalTCPAddr *net.TCPAddr
-	tsLocalTCPAddr *net.TCPAddr
+	lnLocalTCPAddr *net.TCPAddr
 
 	// RPCs:
 	coordClientRPC *rpc.Client
-	hsClientRPC    *rpc.Client
-	tsClientRPC    *rpc.Client
+	//hsClientRPC    *rpc.Client
+	leaderClientRPC *rpc.Client
 
 	// Listeners:
 	putTCPListener *net.TCPListener
@@ -117,8 +121,7 @@ type KVS struct {
 	serverFailListener *net.TCPListener
 
 	// struct with channels:
-	tpl *ServerListener // tail put listener
-	cnl *CoordListener  // coord notification listener
+	cnl *CoordListener // coord notification listener
 
 	// sync
 	allResRecvd chan bool
@@ -127,29 +130,19 @@ type KVS struct {
 	// mutex
 	reqLock sync.Mutex
 
-	reqQueue             chan Req
-	headServerLock       sync.Mutex
-	tailServerLock       sync.Mutex
-	headReconfiguredDone chan bool
-	tailReconfiguredDone chan bool
-	chCapacity           int
+	reqQueue               chan Req
+	tailServerLock         sync.Mutex
+	leaderNodeLock         sync.Mutex
+	leaderReconfiguredDone chan bool
+	tailReconfiguredDone   chan bool
+	chCapacity             int
 }
 
-type CCoordGetHeadServerArg struct {
+type CCoordGetLeaderNodeArg struct {
 	ClientInfo
 	Token tracing.TracingToken
 }
-type CCoordGetHeadServerReply struct {
-	ServerId     uint8
-	ServerIpPort string
-	Token        tracing.TracingToken
-}
-
-type CCoordGetTailServerArg struct {
-	ClientInfo
-	Token tracing.TracingToken
-}
-type CCoordGetTailServerReply struct {
+type CCoordGetLeaderNodeReply struct {
 	ServerId     uint8
 	ServerIpPort string
 	Token        tracing.TracingToken
@@ -222,8 +215,7 @@ type ServerPos uint8
 
 const (
 	StopServer           = 100 // a server id is guanranteed to be unused
-	Head       ServerPos = iota
-	Tail
+	Leader     ServerPos = iota
 )
 
 type AddCNLReq struct {
@@ -242,7 +234,7 @@ func NewKVS() *KVS {
 // all get/put output notifications. ChCapacity determines the concurrency
 // factor at the client: the client will never have more than ChCapacity number of operations outstanding (pending concurrently) at any one time.
 // If there is an issue with connecting to the coord, this should return an appropriate err value, otherwise err should be set to nil.
-func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort string, localCoordIPPort string, localHeadServerIPPort string, localTailServerIPPort string, chCapacity int) (NotifyChannel, error) {
+func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort string, localCoordIPPort string, localLeaderNodeIPPort string, chCapacity int) (NotifyChannel, error) {
 	var err error
 	d.reqQueue = make(chan Req, chCapacity)
 	d.chCapacity = chCapacity
@@ -252,7 +244,7 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 	d.resRecvd = make(map[uint32]interface{})
 	d.allResRecvd = make(chan bool)
 	d.allErrRecvd = make(chan bool)
-	d.kTracer = localTracer // I see that Get() and Put() also has a tracer param. Does the tracer ever gets modified? If not, we probably only need to keep one tracer
+	d.kTracer = localTracer
 
 	/*Connect to Coord as client*/
 	coordLAddr, coordLAddrErr := net.ResolveTCPAddr("tcp", localCoordIPPort)
@@ -295,91 +287,40 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 	}
 	go coordRPCListener.Accept(coordTCPListener)
 
-	/*Get Head Server Addr from Coord*/
-	d.ktrace.RecordAction(HeadReq{clientId})
-	var headServerReq CCoordGetHeadServerArg = CCoordGetHeadServerArg{ClientInfo{clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
-	var headServerRes CCoordGetHeadServerReply
-	hsReqErr := coordClient.Call("CCoord.GetHeadServer", headServerReq, &headServerRes)
-	if err = checkCriticalErr(hsReqErr, "an error requesting head server from coord: "); err != nil {
+	/*Get Leader Server Addr from Coord*/
+	d.ktrace.RecordAction(LeaderReq{clientId})
+	var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
+	var leaderNodeRes CCoordGetLeaderNodeReply
+	lnReqErr := coordClient.Call("CCoord.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
+	if err = checkCriticalErr(lnReqErr, "an error requesting leader server from coord: "); err != nil {
 		return nil, err
 	}
-	d.ktrace = localTracer.ReceiveToken(headServerRes.Token)
-	d.ktrace.RecordAction(HeadResRecvd{clientId, headServerRes.ServerId})
-	d.headServerIPPort = headServerRes.ServerIpPort
+	d.ktrace = localTracer.ReceiveToken(leaderNodeRes.Token)
+	d.ktrace.RecordAction(LeaderResRecvd{clientId, leaderNodeRes.ServerId})
+	d.leaderNodeIPPort = leaderNodeRes.ServerIpPort
 
-	/*Connect to Head*/
-	hsLAddr, hsLAddrErr := net.ResolveTCPAddr("tcp", localHeadServerIPPort)
-	if err = checkCriticalErr(hsLAddrErr, "an error resolving addr for localHeadServerIPPort: "); err != nil {
+	/*Connect to Leader*/
+	lnLAddr, lnLAddrErr := net.ResolveTCPAddr("tcp", localLeaderNodeIPPort)
+	if err = checkCriticalErr(lnLAddrErr, "an error resolving addr for localLeaderNodeIPPort: "); err != nil {
 		return nil, err
 	}
-	d.hsLocalTCPAddr = hsLAddr
-	hsAddr, hsAddrErr := net.ResolveTCPAddr("tcp", d.headServerIPPort)
-	if err = checkCriticalErr(hsAddrErr, "an error resolving addr for headServerIPPort: "); err != nil {
+	d.lnLocalTCPAddr = lnLAddr
+	lnAddr, lnAddrErr := net.ResolveTCPAddr("tcp", d.leaderNodeIPPort)
+	if err = checkCriticalErr(lnAddrErr, "an error resolving addr for leaderNodeIPPort: "); err != nil {
 		return nil, err
 	}
-	hsTCPConn, hsTCPConnErr := net.DialTCP("tcp", hsLAddr, hsAddr)
-	if err = checkCriticalErr(hsTCPConnErr, "an error dialing tcp from kvslib to head server: "); err != nil {
+	lnTCPConn, lnTCPConnErr := net.DialTCP("tcp", lnLAddr, lnAddr)
+	if err = checkCriticalErr(lnTCPConnErr, "an error dialing tcp from kvslib to leader node: "); err != nil {
 		return nil, err
 	}
-	hsTCPConn.SetLinger(0)
-	hsClient := rpc.NewClient(hsTCPConn)
-	d.hsClientRPC = hsClient
-
-	/*Get Tail Server Addr from Coord*/
-	d.ktrace.RecordAction(TailReq{clientId})
-	var tailServerReq CCoordGetTailServerArg = CCoordGetTailServerArg{ClientInfo{clientId, localCoordIPPort}, d.ktrace.GenerateToken()}
-	var tailServerRes CCoordGetTailServerReply
-	tsReqErr := coordClient.Call("CCoord.GetTailServer", tailServerReq, &tailServerRes)
-	if err = checkCriticalErr(tsReqErr, "an error requesting tail server from coord: "); err != nil {
-		return nil, err
-	}
-	d.ktrace = localTracer.ReceiveToken(tailServerRes.Token)
-	d.ktrace.RecordAction(TailResRecvd{clientId, tailServerRes.ServerId})
-	d.tailServerIPPort = tailServerRes.ServerIpPort
-
-	/*Connect to Tail*/
-	tsLAddr, tsLAddrErr := net.ResolveTCPAddr("tcp", localTailServerIPPort)
-	if err = checkCriticalErr(tsLAddrErr, "an error resolving addr for localTailServerIPPort: "); err != nil {
-		return nil, err
-	}
-	d.tsLocalTCPAddr = tsLAddr
-	tsAddr, tsAddrErr := net.ResolveTCPAddr("tcp", d.tailServerIPPort)
-	if err = checkCriticalErr(tsAddrErr, "an error resolving addr for tailServerIPPort: "); err != nil {
-		return nil, err
-	}
-	tsTCPConn, tsTCPConnErr := net.DialTCP("tcp", tsLAddr, tsAddr)
-	if err = checkCriticalErr(tsTCPConnErr, "an error dialing tcp from kvslib to tail server: "); err != nil {
-		return nil, err
-	}
-	tsTCPConn.SetLinger(0)
-	tsClient := rpc.NewClient(tsTCPConn)
-	d.tsClientRPC = tsClient
-
-	/*Start tail server listener for server failure*/
-	tsListenerIpPort := coordLAddr.IP.String() + ":0"
-	tsListenerAddr, tsListenerAddrErr := net.ResolveTCPAddr("tcp", tsListenerIpPort)
-	if err = checkCriticalErr(tsListenerAddrErr, "error finding a random port for TS listener: "); err != nil {
-		return nil, err
-	}
-	tsTCPListener, tsTCPListenerErr := net.ListenTCP("tcp", tsListenerAddr)
-	if err = checkCriticalErr(tsTCPListenerErr, "an error setting up server failure listener in kvslib: "); err != nil {
-		return nil, err
-	}
-	d.putListenerIPPort = tsTCPListener.Addr().String()
-	d.serverFailListener = tsTCPListener
-	tpl := &ServerListener{make(chan PutRes)}
-	d.tpl = tpl
-	tsRPCListener := rpc.NewServer()
-	tsRegErr := tsRPCListener.Register(d.tpl)
-	if err = checkCriticalErr(tsRegErr, "an error registering tpl for tsRPCListener in kvslib: "); err != nil {
-		return nil, err
-	}
+	lnTCPConn.SetLinger(0)
+	lnClient := rpc.NewClient(lnTCPConn)
+	d.leaderClientRPC = lnClient
 
 	d.notifyCh = make(NotifyChannel, chCapacity)
 	d.opId = 0
 	d.latestGId = 0
 	go coordRPCListener.Accept(coordTCPListener)
-	go tsRPCListener.Accept(tsTCPListener)
 	go d.sender()
 	go d.handleFailure()
 	return d.notifyCh, nil
@@ -422,80 +363,44 @@ func (d *KVS) Put(tracer *tracing.Tracer, clientId string, key string, value str
 }
 
 func (d *KVS) handleFailure() {
-	d.headReconfiguredDone = make(chan bool, 256) // TODO maybe a bigger buffer is needed
-	d.tailReconfiguredDone = make(chan bool, 256)
+	d.leaderReconfiguredDone = make(chan bool, 256) // TODO maybe a bigger buffer is needed
 	for {
 		serverFailure := <-d.cnl.ServerFailChan
-		if serverFailure.ServerPosition == Head {
-			d.headServerLock.Lock()
+		if serverFailure.ServerPosition == Leader {
+			d.leaderNodeLock.Lock()
 			/* Close old client connection to HS */
-			d.headServerIPPort = serverFailure.NewServerIpPort
-			hsClientRPCCloseErr := d.hsClientRPC.Close()
-			checkWarning(hsClientRPCCloseErr, "error closing the RPC client for head server(HS) upon receiving failed HS msg in handlGet: ")
+			d.leaderNodeIPPort = serverFailure.NewServerIpPort
+			hsClientRPCCloseErr := d.leaderClientRPC.Close()
+			checkWarning(hsClientRPCCloseErr, "error closing the RPC client for leader server(HS) upon receiving failed HS msg in handlGet: ")
 
-			/* Get new Head server from coord */
-			d.ktrace.RecordAction(HeadReq{d.clientId})
-			var headServerReq CCoordGetHeadServerArg = CCoordGetHeadServerArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
-			var headServerRes CCoordGetHeadServerReply
-			hsReqErr := d.coordClientRPC.Call("CCoord.GetHeadServer", headServerReq, &headServerRes)
+			/* Get new Leader server from coord */
+			d.ktrace.RecordAction(LeaderReq{d.clientId})
+			var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
+			var leaderNodeRes CCoordGetLeaderNodeReply
+			hsReqErr := d.coordClientRPC.Call("CCoord.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
 			if hsReqErr != nil {
-				checkWarning(hsReqErr, "error requesting head server from coord: ")
+				checkWarning(hsReqErr, "error requesting leader server from coord: ")
 				continue
 			}
-			d.ktrace = d.kTracer.ReceiveToken(headServerRes.Token)
-			d.ktrace.RecordAction(HeadResRecvd{d.clientId, headServerRes.ServerId})
-			d.headServerIPPort = headServerRes.ServerIpPort
+			d.ktrace = d.kTracer.ReceiveToken(leaderNodeRes.Token)
+			d.ktrace.RecordAction(LeaderResRecvd{d.clientId, leaderNodeRes.ServerId})
+			d.leaderNodeIPPort = leaderNodeRes.ServerIpPort
 
 			/* Start new client connection to HS */
-			newHSAddr, newHSAddrErr := net.ResolveTCPAddr("tcp", d.headServerIPPort)
+			newHSAddr, newHSAddrErr := net.ResolveTCPAddr("tcp", d.leaderNodeIPPort)
 			checkWarning(newHSAddrErr, "error resolving newHSAddr upon receiving failed HS msg in handlGet:")
-			newHSClientTCP, newHSClientTCPErr := net.DialTCP("tcp", d.hsLocalTCPAddr, newHSAddr)
-			if newHSClientTCPErr != nil {
-				checkWarning(newHSClientTCPErr, "error starting TCP connection from kvslib to NEW HS upon receiving failed HS msg in handlGet: ")
+			newLNClientTCP, newLNClientTCPErr := net.DialTCP("tcp", d.lnLocalTCPAddr, newHSAddr)
+			if newLNClientTCPErr != nil {
+				checkWarning(newLNClientTCPErr, "error starting TCP connection from kvslib to NEW HS upon receiving failed HS msg in handlGet: ")
 				continue
 			}
-			newHSClientTCP.SetLinger(0)
-			d.hsClientRPC = rpc.NewClient(newHSClientTCP)
+			newLNClientTCP.SetLinger(0)
+			d.leaderClientRPC = rpc.NewClient(newLNClientTCP)
 
-			util.PrintfYellow("Before headReconfiguredDone")
-			d.headReconfiguredDone <- true
-			util.PrintfYellow("After headReconfiguredDone")
-			d.headServerLock.Unlock()
-		} else if serverFailure.ServerPosition == Tail {
-			d.tailServerLock.Lock()
-			/* Close old client connection to TS */
-			d.tailServerIPPort = serverFailure.NewServerIpPort
-			tsClientRPCCloseErr := d.tsClientRPC.Close()
-			checkWarning(tsClientRPCCloseErr, "error closing the RPC client for tail server(TS) upon receiving failed TS msg in handlGet: ")
-
-			/* Get new Tail server from coord */
-			d.ktrace.RecordAction(TailReq{d.clientId})
-			var tailServerReq CCoordGetTailServerArg = CCoordGetTailServerArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
-			var tailServerRes CCoordGetTailServerReply
-			tsReqErr := d.coordClientRPC.Call("CCoord.GetTailServer", tailServerReq, &tailServerRes)
-			if tsReqErr != nil {
-				checkWarning(tsReqErr, "an error requesting tail server from coord: ")
-				continue
-			}
-			d.ktrace = d.kTracer.ReceiveToken(tailServerRes.Token)
-			d.ktrace.RecordAction(TailResRecvd{d.clientId, tailServerRes.ServerId})
-			d.tailServerIPPort = tailServerRes.ServerIpPort
-
-			/* Start new client connection to TS */
-			newTSAddr, newTSAddrErr := net.ResolveTCPAddr("tcp", d.tailServerIPPort)
-			checkWarning(newTSAddrErr, "error resolving newTSAddr upon receiving failed TS msg in handlGet:")
-			newTSClientTCP, newTSClientTCPErr := net.DialTCP("tcp", d.tsLocalTCPAddr, newTSAddr)
-			if newTSClientTCPErr != nil {
-				checkWarning(newTSClientTCPErr, "error starting TCP connection from kvslib to NEW TS upon receiving failed TS msg in handlGet: ")
-				continue
-			}
-			newTSClientTCP.SetLinger(0)
-			d.tsClientRPC = rpc.NewClient(newTSClientTCP)
-
-			util.PrintfYellow("Before tailReconfiguredDone")
-			d.tailReconfiguredDone <- true
-			util.PrintfYellow("After tailReconfiguredDone")
-			d.tailServerLock.Unlock()
+			util.PrintfYellow("Before leaderReconfiguredDone")
+			d.leaderReconfiguredDone <- true
+			util.PrintfYellow("After leaderReconfiguredDone")
+			d.leaderNodeLock.Unlock()
 		} else if serverFailure.ServerPosition == StopServer {
 			d.allErrRecvd <- true
 			return
@@ -508,7 +413,7 @@ func (d *KVS) sender() {
 	for {
 		req := <-d.reqQueue
 		if req.kind == "PUT" {
-			// Send to head server
+			// Send to leader server
 			d.putTrace = req.tracer.CreateTrace()
 			d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
 			var putReq PutReq = PutReq{req.pq.ClientId, req.pq.OpId, d.latestGId, req.pq.Key, req.pq.Value, d.putListenerIPPort, d.putTrace.GenerateToken()}
@@ -517,14 +422,16 @@ func (d *KVS) sender() {
 			keepSending := true
 			var putRes PutRes
 			for keepSending {
-				d.headServerLock.Lock()
+
+				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
-				d.hsClientRPC.Go("Request.Put", putReq, nil, nil)
-				d.headServerLock.Unlock()
+				d.leaderClientRPC.Go("Request.Put", putReq, nil, nil)
+				d.leaderNodeLock.Unlock()
+
 				select {
-				case putRes = <-d.tpl.PutResChan:
-					keepSending = false
-				case <-d.headReconfiguredDone:
+				// case putRes = <-d.tpl.PutResChan:
+				// 	keepSending = false
+				case <-d.leaderReconfiguredDone:
 					// Send again
 				case <-time.After(2 * time.Second): // set a timeout of 2 second
 					// Send again
@@ -541,8 +448,8 @@ func (d *KVS) sender() {
 			}
 		} else if req.kind == "GET" {
 			// Send to tail server
-			d.getTrace = req.tracer.CreateTrace()
-			d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
+			// d.getTrace = req.tracer.CreateTrace()
+			// d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
 			var getReq GetReq = GetReq{req.gq.ClientId, req.gq.OpId, req.gq.Key, d.getTrace.GenerateToken()}
 			var getRes GetRes
 
@@ -551,28 +458,29 @@ func (d *KVS) sender() {
 			util.PrintfYellow("In Get, before keepSending loop")
 			for keepSending {
 				util.PrintfYellow("In Get, inside keepSending loop")
-				d.tailServerLock.Lock()
+				//d.tailServerLock.Lock()
+				d.leaderNodeLock.Lock()
 				util.PrintfYellow("In Get, after Lock, before call")
-				err = d.tsClientRPC.Call("Request.Get", getReq, &getRes)
+				err = d.leaderClientRPC.Call("Request.Get", getReq, &getRes)
 				util.PrintfYellow("In Get, after Lock, after call")
-				d.tailServerLock.Unlock()
+				d.leaderNodeLock.Unlock()
 				util.PrintfYellow("In Get, after unlock")
 				if err != nil { // will now wait for head server to have finished reconfiguring
-					<-d.tailReconfiguredDone
+					<-d.leaderReconfiguredDone
 				} else {
 					keepSending = false
 				}
 			}
 
-			if _, ok := d.resRecvd[req.gq.OpId]; !ok { // don't do anything if receiving a duplicate response
-				d.getTrace = req.tracer.ReceiveToken(getRes.Token)
-				d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.GId, getRes.Key, getRes.Value})
-				d.resRecvd[req.gq.OpId] = getRes
-				if getRes.GId > d.latestGId {
-					d.latestGId = getRes.GId
-				}
-				d.notifyCh <- ResultStruct{getRes.OpId, getRes.GId, getRes.Value}
-			}
+			// if _, ok := d.resRecvd[req.gq.OpId]; !ok { // don't do anything if receiving a duplicate response
+			// 	d.getTrace = req.tracer.ReceiveToken(getRes.Token)
+			// 	d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.GId, getRes.Key, getRes.Value})
+			// 	d.resRecvd[req.gq.OpId] = getRes
+			// 	if getRes.GId > d.latestGId {
+			// 		d.latestGId = getRes.GId
+			// 	}
+			// 	d.notifyCh <- ResultStruct{getRes.OpId, getRes.GId, getRes.Value}
+			// }
 		} else if req.kind == "STOP" {
 			d.allResRecvd <- true
 			return
@@ -594,8 +502,8 @@ func (d *KVS) Stop() {
 	// close(d.tpl.PutResChan)
 	// close(d.reqQueue)
 	d.coordClientRPC.Close()
-	d.hsClientRPC.Close()
-	d.tsClientRPC.Close()
+	d.leaderClientRPC.Close()
+	// d.tsClientRPC.Close()
 	d.putTCPListener.Close()
 	d.serverFailListener.Close()
 	d.ktrace.GenerateToken()
@@ -613,14 +521,8 @@ func (tpl *ServerListener) PutSuccess(putRes PutRes, isDone *bool) error {
 	return nil
 }
 
-func (cnl *CoordListener) ChangeHeadServer(newServerIPPort string, isDone *bool) error {
-	cnl.ServerFailChan <- ServerFail{Head, newServerIPPort}
-	*isDone = true
-	return nil
-}
-
-func (cnl *CoordListener) ChangeTailServer(newServerIPPort string, isDone *bool) error {
-	cnl.ServerFailChan <- ServerFail{Tail, newServerIPPort}
+func (cnl *CoordListener) ChangeLeaderNode(newServerIPPort string, isDone *bool) error {
+	cnl.ServerFailChan <- ServerFail{Leader, newServerIPPort}
 	*isDone = true
 	return nil
 }
