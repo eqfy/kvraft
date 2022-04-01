@@ -97,7 +97,7 @@ type KVS struct {
 	resRecvd  map[uint32]interface{}
 
 	// IP & ports
-	headServerIPPort    string
+	//leaderServerIPPort    string
 	putListenerIPPort   string
 	coordListenerIPPort string
 
@@ -110,7 +110,8 @@ type KVS struct {
 
 	// RPCs:
 	coordClientRPC *rpc.Client
-	hsClientRPC    *rpc.Client
+	//hsClientRPC    *rpc.Client
+	leaderClientRPC *rpc.Client
 
 	// Listeners:
 	putTCPListener *net.TCPListener
@@ -130,6 +131,7 @@ type KVS struct {
 	reqQueue             chan Req
 	headServerLock       sync.Mutex
 	tailServerLock       sync.Mutex
+	leaderNodeLock       sync.Mutex
 	headReconfiguredDone chan bool
 	tailReconfiguredDone chan bool
 	chCapacity           int
@@ -455,10 +457,10 @@ func (d *KVS) sender() {
 			keepSending := true
 			var putRes PutRes
 			for keepSending {
-				d.headServerLock.Lock()
+				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
-				d.hsClientRPC.Go("Request.Put", putReq, nil, nil)
-				d.headServerLock.Unlock()
+				d.leaderClientRPC.Go("Request.Put", putReq, nil, nil)
+				d.leaderNodeLock.Unlock()
 				select {
 				// case putRes = <-d.tpl.PutResChan:
 				// 	keepSending = false
@@ -490,11 +492,11 @@ func (d *KVS) sender() {
 			for keepSending {
 				util.PrintfYellow("In Get, inside keepSending loop")
 				//d.tailServerLock.Lock()
-				d.headServerLock.Lock()
+				d.leaderNodeLock.Lock()
 				util.PrintfYellow("In Get, after Lock, before call")
-				err = d.hsClientRPC.Call("Request.Get", getReq, &getRes)
+				err = d.leaderClientRPC.Call("Request.Get", getReq, &getRes)
 				util.PrintfYellow("In Get, after Lock, after call")
-				d.headServerLock.Unlock()
+				d.leaderNodeLock.Unlock()
 				util.PrintfYellow("In Get, after unlock")
 				if err != nil { // will now wait for head server to have finished reconfiguring
 					<-d.headReconfiguredDone
@@ -533,7 +535,7 @@ func (d *KVS) Stop() {
 	// close(d.tpl.PutResChan)
 	// close(d.reqQueue)
 	d.coordClientRPC.Close()
-	d.hsClientRPC.Close()
+	d.leaderClientRPC.Close()
 	// d.tsClientRPC.Close()
 	d.putTCPListener.Close()
 	d.serverFailListener.Close()
