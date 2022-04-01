@@ -364,7 +364,6 @@ func (d *KVS) Put(tracer *tracing.Tracer, clientId string, key string, value str
 
 func (d *KVS) handleFailure() {
 	d.leaderReconfiguredDone = make(chan bool, 256) // TODO maybe a bigger buffer is needed
-	d.tailReconfiguredDone = make(chan bool, 256)
 	for {
 		serverFailure := <-d.cnl.ServerFailChan
 		if serverFailure.ServerPosition == Leader {
