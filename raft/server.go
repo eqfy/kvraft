@@ -446,16 +446,38 @@ func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
 	return nil
 }
 
-// NotifyServerFailure TEMPLATE FOR SERVER FAILURE PROTOCOL BETWEEN COORD-SERVER
-// Added this to check if rpc calls are behaving as intended
+// NotifyServerFailure Needs to be deleted. Just keeping it for now to avoid coord refactoring
+// will remove it soon
 func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *NotifyServerFailureAck) error {
 	fmt.Println("Received server failure notification for server with id: ", notification.FailedServerId)
-	// // trace action
-	// cTrace := s.tracer.ReceiveToken(notification.Token)
-	// for _, servId := range notification.FailedServerId {
-	// 	cTrace.RecordAction(ServerFailRecvd{FailedServerId: servId})
-	// }
-	return errors.New("invalid notification msg")
+	// trace action
+	cTrace := s.tracer.ReceiveToken(notification.Token)
+	for _, servId := range notification.FailedServerId {
+		cTrace.RecordAction(ServerFailRecvd{FailedServerId: servId})
+	}
+	return nil
+}
+
+// NotifyFailOverLeader TEMPLATE Server learns it's the new leader when coord calls this
+func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *NotifyServerFailureAck) error {
+	fmt.Println("Received leader failure notification. I'm the new leader.")
+	return nil
+}
+
+// GetLogState TEMPLATE coord calls this during leader selection to determine the next
+// best leader
+func (s *Server) GetLogState(request ServerLogStateRequest, reply *ServerLogState) error {
+	*reply = ServerLogState{
+		ServerId: s.ServerId,
+		Term:     uint8(s.currentTerm),
+		LogIdx:   len(s.log) - 1,
+	}
+	return nil
+}
+
+// Terminate If coord detects majority failures, system shuts down
+func (s *Server) Terminate(notification TerminateNotification, reply *bool) error {
+	return nil
 }
 
 // TODO

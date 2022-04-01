@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"cs.ubc.ca/cpsc416/kvraft/kvslib"
 	"errors"
 	"fmt"
 	"net"
@@ -143,8 +144,65 @@ type NotifyServerFailureAck struct {
 	Token    tracing.TracingToken
 }
 
+// ServerLogState Coord retrieves this info from each
+// server during leader selection process to determine
+// the rightful leader
+type ServerLogState struct {
+	ServerId uint8
+	Term     uint8
+	LogIdx   int
+}
+
+type ServerLogStateRequest struct {
+	Token tracing.TracingToken
+}
+
+// LeaderFailOver Coord passes on this info to the
+// new leader
+type LeaderFailOver struct {
+	// id of new leader
+	ServerId       uint8
+	FailedLeaderId uint8
+	// perhaps the two above ids above
+	// could be useful for tracing
+	Peers []ServerInfo
+	Term  uint8
+	Token tracing.TracingToken
+}
+
+type LeaderFailOverAck struct {
+	ServerId uint8
+	Token    tracing.TracingToken
+}
+
+// TerminateNotification Let the servers know that kvs can
+// no longer stay functional when consensus requirements
+// are unmet
+type TerminateNotification struct {
+	Token tracing.TracingToken
+}
+
 var mu sync.Mutex
 var joinCompleted bool
+
+func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg, reply *kvslib.CCoordGetLeaderNodeReply) error {
+	if !joinCompleted || c.coord.Leader.ServerId == 0 {
+		return errors.New("leader is currently unavailable")
+	}
+
+	ktracer := c.coord.Tracer.ReceiveToken(request.Token)
+	ktracer.RecordAction(HeadReqRecvd{ClientId: request.ClientId})
+
+	serverId := c.coord.Leader.ServerId
+	ktracer.RecordAction(HeadRes{ClientId: request.ClientId, ServerId: serverId})
+
+	*reply = kvslib.CCoordGetLeaderNodeReply{
+		ServerId:     serverId,
+		ServerIpPort: c.coord.Leader.ClientListenAddr,
+		Token:        ktracer.GenerateToken(),
+	}
+	return nil
+}
 
 func (c *ClientLearnServers) GetHeadTailServer(request HeadTailServerRequest, reply *HeadTailServerReply) error {
 	fmt.Println("Recevied headTailRequest from client")
