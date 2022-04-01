@@ -377,7 +377,7 @@ func (d *KVS) handleFailure() {
 			d.ktrace.RecordAction(LeaderReq{d.clientId})
 			var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
 			var leaderNodeRes CCoordGetLeaderNodeReply
-			hsReqErr := d.coordClientRPC.Call("CCoord.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
+			hsReqErr := d.coordClientRPC.Call("ClientLearnServers.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
 			if hsReqErr != nil {
 				checkWarning(hsReqErr, "error requesting leader server from coord: ")
 				continue
