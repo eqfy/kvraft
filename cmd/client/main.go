@@ -28,7 +28,7 @@ func main() {
 	})
 
 	client := kvslib.NewKVS()
-	notifCh, err := client.Start(tracer, config.ClientID, config.CoordIPPort, config.LocalCoordIPPort, config.LocalHeadServerIPPort, config.ChCapacity)
+	notifCh, err := client.Start(tracer, config.ClientID, config.CoordIPPort, config.LocalCoordIPPort, config.LocalLeaderServerIPPort, config.ChCapacity)
 	go receiveAndPrint(notifCh)
 
 	util.CheckErr(err, "Error reading client config: %v\n", err)
