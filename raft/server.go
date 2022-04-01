@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"os"
 	"sort"
+	"sync"
 
 	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/util"
@@ -165,6 +166,9 @@ type Server struct {
 	followerLogIndexGreaterThanNextIndex chan bool // probably follower info
 	existsInterestingN                   chan bool
 	runLeader                            chan bool
+
+	// Lock
+	L sync.RWMutex
 }
 
 // AppendEntries RPC
@@ -299,7 +303,7 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	s.runCandidate = make(chan bool, 1)
 
 	// leader sync
-	s.commandFromClient = make(chan ClientCommand)
+	s.commandFromClient = make(chan ClientCommand, 1) //question: what should be the capacity of this channel?
 	s.runLeader = make(chan bool, 1)
 
 }
@@ -455,13 +459,62 @@ func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *No
 }
 
 // TODO
-func (s *Server) Get(arg interface{}, resp interface{}) {
+func (s *Server) Get(arg GetRequest, resp GetResponse) {
+	gtrace := s.tracer.ReceiveToken(arg.Token)
+	gtrace.RecordAction(GetRecvd{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      arg.Key,
+	})
+
+	clientCommand := ClientCommand{
+		command: Command{
+			kind: Get,
+			key:  arg.Key,
+		},
+		done: make(chan bool, 1),
+	}
+	s.commandFromClient <- clientCommand
+	<-clientCommand.done
+
+	resp.ClientId = arg.ClientId
+	resp.OpId = arg.OpId
+	resp.Key = arg.Key
+	resp.Value = s.kv[arg.Key]
+	resp.Token = gtrace.GenerateToken()
 
 }
 
 // TODO
-func (s *Server) Put(arg interface{}, resp interface{}) {
+func (s *Server) Put(arg PutRequest, resp PutResponse) {
+	ptrace := s.tracer.ReceiveToken(arg.Token)
+	ptrace.RecordAction(PutRecvd{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      arg.Key,
+		Value:    arg.Value,
+	})
 
+	clientCommand := ClientCommand{
+		command: Command{
+			kind: Put,
+			key:  arg.Key,
+			val:  arg.Value,
+		},
+		done: make(chan bool, 1),
+	}
+	s.commandFromClient <- clientCommand
+	<-clientCommand.done
+
+	s.L.Lock()
+	s.kv[arg.Key] = arg.Value
+	s.L.Unlock()
+
+	resp.ClientId = arg.ClientId
+	resp.OpId = arg.OpId
+	resp.Key = arg.Key
+	resp.Value = arg.Value
+	resp.Token = ptrace.GenerateToken()
 }
 
 func (s *Server) runRaft() {
@@ -615,6 +668,7 @@ func (s *Server) applyEntry(entry Entry) error {
 	switch entry.command.kind {
 	case Put:
 		// TODO lock this and return result of put
+		s.L.lock()
 		s.kv[entry.command.key] = entry.command.val
 	case Get:
 		// TODO return result of get
