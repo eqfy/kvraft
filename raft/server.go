@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"os"
 	"sort"
+	"sync"
 
 	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/util"
@@ -165,6 +166,9 @@ type Server struct {
 	followerLogIndexGreaterThanNextIndex chan bool // probably follower info
 	existsInterestingN                   chan bool
 	runLeader                            chan bool
+
+	// Lock
+	L sync.RWMutex
 }
 
 // AppendEntries RPC
@@ -205,7 +209,7 @@ type Entry struct {
 
 type ClientCommand struct {
 	command Command
-	done    chan bool
+	done    chan Command
 }
 
 type Command struct {
@@ -299,7 +303,7 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	s.runCandidate = make(chan bool, 1)
 
 	// leader sync
-	s.commandFromClient = make(chan ClientCommand)
+	s.commandFromClient = make(chan ClientCommand, 1) //question: what should be the capacity of this channel?
 	s.runLeader = make(chan bool, 1)
 
 }
@@ -477,13 +481,62 @@ func (s *Server) Terminate(notification TerminateNotification, reply *bool) erro
 }
 
 // TODO
-func (s *Server) Get(arg interface{}, resp interface{}) {
+func (s *Server) Get(arg GetRequest, resp GetResponse) {
+	gtrace := s.tracer.ReceiveToken(arg.Token)
+	gtrace.RecordAction(GetRecvd{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      arg.Key,
+	})
 
+	done := make(chan Command, 1)
+
+	clientCommand := ClientCommand{
+		command: Command{
+			kind: Get,
+			key:  arg.Key,
+		},
+		done: done,
+	}
+	s.commandFromClient <- clientCommand
+	command := <-clientCommand.done
+
+	resp.ClientId = arg.ClientId
+	resp.OpId = arg.OpId
+	//TODO replace
+	resp.Key = command.key
+	resp.Value = command.val
+	resp.Token = gtrace.GenerateToken()
 }
 
 // TODO
-func (s *Server) Put(arg interface{}, resp interface{}) {
+func (s *Server) Put(arg PutRequest, resp PutResponse) {
+	ptrace := s.tracer.ReceiveToken(arg.Token)
+	ptrace.RecordAction(PutRecvd{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      arg.Key,
+		Value:    arg.Value,
+	})
 
+	done := make(chan Command, 1)
+
+	clientCommand := ClientCommand{
+		command: Command{
+			kind: Put,
+			key:  arg.Key,
+			val:  arg.Value,
+		},
+		done: done,
+	}
+	s.commandFromClient <- clientCommand
+	command := <-clientCommand.done
+
+	resp.ClientId = arg.ClientId
+	resp.OpId = arg.OpId
+	resp.Key = command.key
+	resp.Value = command.val
+	resp.Token = ptrace.GenerateToken()
 }
 
 func (s *Server) runRaft() {
@@ -527,14 +580,14 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 			}
 		case commitIndex := <-s.commitIndexUpdated:
 			if commitIndex > s.lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
 			}
 		case lastApplied := <-s.lastAppliedUpdated:
 			if s.commitIndex > lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
@@ -598,14 +651,14 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			}
 		case commitIndex := <-s.commitIndexUpdated:
 			if commitIndex > s.lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
 			}
 		case lastApplied := <-s.lastAppliedUpdated:
 			if s.commitIndex > lastApplied {
-				err = s.applyEntry(s.log[s.lastApplied])
+				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
 				}
@@ -623,7 +676,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			})
 			// TODO send appendEntries to all followers
 			// Commit the entry once most followers responded?
-			clientCommand.done <- true
+			clientCommand.done <- clientCommand.command
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
 		case <-s.existsInterestingN:
@@ -633,17 +686,25 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
-func (s *Server) applyEntry(entry Entry) error {
+func (s *Server) applyEntry(entry Entry) (Command, error) {
 	switch entry.command.kind {
 	case Put:
 		// TODO lock this and return result of put
+		s.L.Lock()
 		s.kv[entry.command.key] = entry.command.val
+		s.L.Unlock()
+		return Command{kind: Get, key: entry.command.key, val: entry.command.val}, nil
 	case Get:
 		// TODO return result of get
+		command := Command{kind: Get, key: entry.command.key}
+		s.L.Lock()
+		command.val = s.kv[entry.command.key]
+		s.L.Unlock()
+		return command, nil
 	default:
-		return fmt.Errorf("unable to apply entry %v", entry)
+		return Command{}, fmt.Errorf("unable to apply entry %v", entry)
 	}
-	return nil
+	return Command{}, nil
 }
 
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
