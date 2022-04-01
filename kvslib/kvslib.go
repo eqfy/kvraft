@@ -291,8 +291,8 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 	d.ktrace.RecordAction(LeaderReq{clientId})
 	var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
 	var leaderNodeRes CCoordGetLeaderNodeReply
-	lnReqErr := coordClient.Call("CCoord.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
-	if err = checkCriticalErr(lnReqErr, "an error requesting leader server from coord: "); err != nil {
+	lnReqErr := coordClient.Call("ClientLearnServers.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
+	if err = checkCriticalErr(lnReqErr, "an error requesting leader node from coord: "); err != nil {
 		return nil, err
 	}
 	d.ktrace = localTracer.ReceiveToken(leaderNodeRes.Token)
