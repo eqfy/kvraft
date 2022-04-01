@@ -482,7 +482,6 @@ func (s *Server) Get(arg GetRequest, resp GetResponse) {
 	resp.Key = arg.Key
 	resp.Value = s.kv[arg.Key]
 	resp.Token = gtrace.GenerateToken()
-
 }
 
 // TODO
@@ -668,8 +667,9 @@ func (s *Server) applyEntry(entry Entry) error {
 	switch entry.command.kind {
 	case Put:
 		// TODO lock this and return result of put
-		s.L.lock()
+		s.L.Lock()
 		s.kv[entry.command.key] = entry.command.val
+		s.L.Unlock()
 	case Get:
 		// TODO return result of get
 	default:
