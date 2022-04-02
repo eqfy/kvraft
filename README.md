@@ -26,7 +26,7 @@ serverClusterView: [{1 127.0.0.1:21001 127.0.0.1:21001 127.0.0.1:21021 127.0.0.1
 remote fchecker addresses:  map[1:127.0.0.1:46251 2:127.0.0.1:36698 3:127.0.0.1:51591]
 local fchecker addresses:  map[1:127.0.0.1:51921 2:127.0.0.1:49742 3:127.0.0.1:58377]
 ```
-Coord sets first server (server-id=1) as leader, and updates its serverClusterView to include all three servers, and begins monitoring the servers in the cluster. To verify that the monitoring of servers is correct, one can check the generated log file `LOGS-FCHECK-{EpochNonce}.log`.
+Coord sets first server (server-id=1) as leader, and updates its serverClusterView to include all three servers, and begins monitoring the servers in the cluster. To verify that the monitoring of servers is correct, one can check the generated log file `LOGS-FCHECK-{EpochNonce}`.
 
 ##### Server (leader output)
 ```
