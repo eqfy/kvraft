@@ -39,7 +39,7 @@ Peers: [{1 127.0.0.1:21001 127.0.0.1:21001 127.0.0.1:21021 127.0.0.1:21031 [167 
 
 Run command 
 ```console
-go run cmd/client/main.go”
+go run cmd/client/main.go {client-id}
 ````
-Should initialize a client instance that currently has a connection to the leader node from communicating with the coord
+Where `{client-id}` is the ID of the current Client. This Should initialize a client instance that currently has a connection to the leader node from communicating with the coord
 
