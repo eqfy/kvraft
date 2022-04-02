@@ -183,13 +183,24 @@ type TerminateNotification struct {
 }
 
 var mu sync.Mutex
+var clientMu sync.Mutex
 var joinCompleted bool
 
 func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg, reply *kvslib.CCoordGetLeaderNodeReply) error {
-	if !joinCompleted || c.coord.Leader.ServerId == 0 {
-		return errors.New("leader is currently unavailable")
-	}
+	clientMu.Lock()
+	defer clientMu.Unlock()
 
+	for {
+		if !joinCompleted || c.coord.Leader.ServerId == 0 {
+			continue
+		} else {
+			break
+		}
+	}
+	// fmt.Println("Inside GetLeaderNode: LeaderAddr: ", c.coord.Leader.CoordListenAddr)
+	// if !joinCompleted || c.coord.Leader.ServerId == 0 {
+	//	return errors.New("leader is currently unavailable")
+	//}
 	ktracer := c.coord.Tracer.ReceiveToken(request.Token)
 	ktracer.RecordAction(HeadReqRecvd{ClientId: request.ClientId})
 
