@@ -8,7 +8,8 @@ import (
 	"os"
 	"sort"
 	"sync"
-
+	"time"
+	"math"
 	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/util"
 	"github.com/DistributedClocks/tracing"
@@ -128,6 +129,8 @@ type Server struct {
 	// Server state may go here
 	ServerId   uint8
 	Peers      []ServerInfo
+	ClusterSize   uint8				/* original cluster size*/
+	Majority 	uint8
 	Config     Addr
 	trace      *tracing.Trace
 	tracer     *tracing.Tracer
@@ -149,7 +152,7 @@ type Server struct {
 	matchIndex []uint64
 
 	// all servers
-	commitIndexUpdated               chan uint64
+	commitIndexUpdated               chan bool
 	lastAppliedUpdated               chan uint64
 	rpcGotTermGreaterThanCurrentTerm chan uint32
 
@@ -283,14 +286,20 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	s.trace = strace.CreateTrace()
 	s.tracer = strace
 
+	// values
+	s.commitIndex = 0
+	s.lastApplied = 0
+
 	// raft persistent state
 	s.kv = make(map[string]string)
+	s.log = make([]Entry,0)
+	s.log = append(s.log, Entry{})	// log is 1-indexed
 
 	// join sync
 	joinComplete = make(chan bool)
 
 	// all server sync
-	s.commitIndexUpdated = make(chan uint64)
+	s.commitIndexUpdated = make(chan bool)
 	s.lastAppliedUpdated = make(chan uint64)
 	s.rpcGotTermGreaterThanCurrentTerm = make(chan uint32)
 
@@ -335,6 +344,9 @@ func (s *Server) FindServerStateOnStartup(coordReply JoinResponse, reply *Server
 		s.runFollower <- true
 	}
 	s.Peers = coordReply.Peers
+	s.ClusterSize = uint8(len(coordReply.Peers))
+	s.currentTerm = coordReply.Term
+	s.Majority = uint8(math.Ceil(float64(s.ClusterSize)/float64(2)))
 	fmt.Printf("Peers: %v\n TermNumber: %v\n", coordReply.Peers, coordReply.Term)
 
 	s.trace.RecordAction(ServerJoined{s.ServerId})
@@ -529,6 +541,9 @@ func (s *Server) Put(arg PutRequest, resp PutResponse) {
 		},
 		done: done,
 	}
+
+	fmt.Printf("(Leader Put): received client command=%v\n", clientCommand)
+
 	s.commandFromClient <- clientCommand
 	command := <-clientCommand.done
 
@@ -578,8 +593,8 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 			if !canRunFollower {
 				return
 			}
-		case commitIndex := <-s.commitIndexUpdated:
-			if commitIndex > s.lastApplied {
+		case <-s.commitIndexUpdated:
+			if s.commitIndex > s.lastApplied {
 				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
@@ -649,8 +664,8 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			if !canRunLeader {
 				return
 			}
-		case commitIndex := <-s.commitIndexUpdated:
-			if commitIndex > s.lastApplied {
+		case <-s.commitIndexUpdated:
+			if s.commitIndex > s.lastApplied {
 				_, err = s.applyEntry(s.log[s.lastApplied])
 				if err != nil {
 					errorChan <- err
@@ -669,14 +684,43 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			s.runLeader <- false
 			return
 		case clientCommand := <-s.commandFromClient:
-			s.log = append(s.log, Entry{
+			fmt.Printf("(Leader AppendEntries): Preparing to send request=%v to followers.\n", clientCommand)
+
+			newEntry := Entry{
 				term:    s.currentTerm,
 				command: clientCommand.command,
 				index:   uint64(len(s.log)),
-			})
-			// TODO send appendEntries to all followers
-			// Commit the entry once most followers responded?
+			}
+			prevLogEntry := s.log[len(s.log) - 1]
+			appendEntryArg := &AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.index, prevLogEntry.term, []Entry{newEntry}, s.commitIndex}
+			
+			/* Append to my log*/
+			s.log = append(s.log, newEntry)
+			
+			currPeers := len(s.Peers) - 1
+			peerReply := make(chan bool)
+			majorityReplied := make(chan bool)
+
+			/* listen for async AppendEntry responses*/
+			go s.countReplies(currPeers, peerReply, majorityReplied)
+
+			fmt.Printf("(Leader AppendEntries): sending AppendEntries=%v to followers.\n", *appendEntryArg)
+			for i, peer := range s.Peers {
+				if uint8(i + 1) == s.ServerId{
+					continue
+				}
+				go s.sendAppendEntry(peer, appendEntryArg, peerReply)
+			}
+			/* Can return once we have a majority*/
+			<- majorityReplied
+
+			/* Mark entry as committed, and notify server to update kv state*/
+			s.commitIndex += 1
+			s.commitIndexUpdated <- true
+			fmt.Printf("(Leader AppendEntries): Successfully replicated entry=%v on majority, commitIndex updated to be %d\n", newEntry, s.commitIndex)
+
 			clientCommand.done <- clientCommand.command
+	
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
 		case <-s.existsInterestingN:
@@ -686,7 +730,60 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
+func (s* Server) countReplies(currPeers int, peerReply chan bool, majorityReplied chan bool){
+	fmt.Println("(Leader): Listening for AppendEntry Responses...")
+	count := 0
+	majority := s.Majority - 1 /* subtract itself*/
+	for count < currPeers {
+		select{
+			case <- peerReply:
+				count += 1
+				if uint8(count) == majority{
+					fmt.Println("(Leader AppendEntries): Majority reached!")
+					majorityReplied <- true
+				}
+		}
+	}
+}
+
+/* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
+func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReply chan bool) (error){
+	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
+	defer peerConn.Close()
+	if err != nil{
+		fmt.Println("Can't connect to peer")
+		return err
+	}
+	var reply AppendEntriesReply
+	done := make(chan *rpc.Call, 1)
+	for {
+		peerConn.Go("Server.AppendEntries", args, &reply, done)
+		select {
+			/* leader retries indefinitely if can't reach follower*/
+			case <-time.After(20 * time.Second):
+				continue
+			case call := <-done:
+				if call.Error == nil {
+					res := call.Reply.(*AppendEntriesReply)
+					fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
+					if !res.success{
+						/* To-Do: force copy logs*/
+					} else {
+						peerReply <- true
+						return nil
+					}
+				} else {
+					fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", err, peer.ServerId)
+					return call.Error	// what to do when AppendEntry returns error?
+				}
+		}
+	}
+	
+
+}
+
 func (s *Server) applyEntry(entry Entry) (Command, error) {
+	s.lastApplied += 1
 	switch entry.command.kind {
 	case Put:
 		// TODO lock this and return result of put

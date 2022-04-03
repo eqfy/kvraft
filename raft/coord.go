@@ -108,7 +108,7 @@ type JoinResponse struct {
 	ServerId uint8
 	Leader   bool
 	Peers    []ServerInfo
-	Term     uint8
+	Term     uint32
 }
 
 type HeadTailServerRequest struct {
