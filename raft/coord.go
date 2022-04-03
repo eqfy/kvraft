@@ -149,8 +149,8 @@ type NotifyServerFailureAck struct {
 // the rightful leader
 type ServerLogState struct {
 	ServerId uint8
-	Term     uint8
-	LogIdx   int
+	Term     uint32
+	LogIdx   uint64
 }
 
 type ServerLogStateRequest struct {

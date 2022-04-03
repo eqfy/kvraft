@@ -151,7 +151,6 @@ type Server struct {
 
 	// all servers
 	commitIndexUpdated               chan bool
-	lastAppliedUpdated               chan uint64
 	rpcGotTermGreaterThanCurrentTerm chan uint32
 
 	// follower
@@ -244,7 +243,6 @@ type GetRequest struct {
 type GetResponse struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
 	Key      string
 	Value    string
 	Token    tracing.TracingToken
@@ -299,7 +297,6 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 
 	// all server sync
 	s.commitIndexUpdated = make(chan bool)
-	s.lastAppliedUpdated = make(chan uint64)
 	s.rpcGotTermGreaterThanCurrentTerm = make(chan uint32)
 
 	// follower sync
@@ -494,10 +491,11 @@ func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *Notify
 // GetLogState TEMPLATE coord calls this during leader selection to determine the next
 // best leader
 func (s *Server) GetLogState(request ServerLogStateRequest, reply *ServerLogState) error {
+	prevLogEntry := s.log[len(s.log) - 1]
 	*reply = ServerLogState{
 		ServerId: s.ServerId,
-		Term:     uint8(s.currentTerm),
-		LogIdx:   len(s.log) - 1,
+		Term:     prevLogEntry.Term,
+		LogIdx:   prevLogEntry.Index,
 	}
 	return nil
 }
@@ -507,8 +505,7 @@ func (s *Server) Terminate(notification TerminateNotification, reply *bool) erro
 	return nil
 }
 
-// TODO
-func (s *Server) Get(arg GetRequest, resp GetResponse) error {
+func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 	gtrace := s.tracer.ReceiveToken(arg.Token)
 	gtrace.RecordAction(GetRecvd{
 		ClientId: arg.ClientId,
@@ -537,7 +534,6 @@ func (s *Server) Get(arg GetRequest, resp GetResponse) error {
 	return nil
 }
 
-// TODO
 func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 	ptrace := s.tracer.ReceiveToken(arg.Token)
 	ptrace.RecordAction(PutRecvd{
@@ -601,8 +597,7 @@ func (s *Server) raftFollower(errorChan chan<- error) {
 }
 
 func (s *Server) raftFollowerLoop(errorChan chan<- error) {
-	var err error
-
+	// var err error
 	s.appendEntriesCanRespond <- true
 	for {
 		select {
@@ -611,19 +606,7 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 				return
 			}
 		case <-s.commitIndexUpdated:
-			if s.commitIndex > s.lastApplied {
-				_, err = s.applyEntry(s.log[s.commitIndex])
-				if err != nil {
-					errorChan <- err
-				}
-			}
-		case lastApplied := <-s.lastAppliedUpdated:
-			if s.commitIndex > lastApplied {
-				_, err = s.applyEntry(s.log[s.commitIndex])
-				if err != nil {
-					errorChan <- err
-				}
-			}
+			s.doCommit(errorChan)
 		case <-s.appendEntriesDone:
 			s.appendEntriesCanRespond <- true
 		}
@@ -674,7 +657,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		set commitIndex = N (§5.3, §5.4)
 	*/
 
-	var err error
+	// var err error
 	for {
 		select {
 		case canRunLeader := <-s.runLeader:
@@ -682,19 +665,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 				return
 			}
 		case <-s.commitIndexUpdated:
-			if s.commitIndex > s.lastApplied {
-				_, err = s.applyEntry(s.log[s.commitIndex])
-				if err != nil {
-					errorChan <- err
-				}
-			}
-		case lastApplied := <-s.lastAppliedUpdated:
-			if s.commitIndex > lastApplied {
-				_, err = s.applyEntry(s.log[s.commitIndex])
-				if err != nil {
-					errorChan <- err
-				}
-			}
+			s.doCommit(errorChan)
 		case newTerm := <-s.rpcGotTermGreaterThanCurrentTerm:
 			s.currentTerm = newTerm
 			s.runFollower <- true
@@ -702,7 +673,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			return
 		case clientCommand := <-s.commandFromClient:
 			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
-			go s.leaderServiceCommand(clientCommand)
+			go s.leaderHandleCommand(clientCommand)
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
 		case <-s.existsInterestingN:
@@ -712,7 +683,19 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
-func (s* Server) leaderServiceCommand(clientCommand ClientCommand){
+func (s* Server) doCommit(errorChan chan<- error){
+	for s.commitIndex > s.lastApplied {
+		s.lastApplied++
+		_, err := s.applyEntry(s.log[s.commitIndex])
+		if err != nil {
+			errorChan <- err
+		}
+	}
+}
+
+func (s* Server) leaderHandleCommand(clientCommand ClientCommand){
+	/*  - Send AppendEntries in parallel to all peers.
+		- Once majority acks, return clientCommand.done <- clientCommand.command */
 	newEntry := Entry{
 		Term:    s.currentTerm,
 		Command: clientCommand.command,
@@ -799,7 +782,6 @@ func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 }
 
 func (s *Server) applyEntry(entry Entry) (Command, error) {
-	s.lastApplied += 1
 	switch entry.Command.Kind {
 	case Put:
 		// TODO lock this and return result of put
@@ -849,7 +831,8 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	if int(arg.PrevLogIndex) >= len(s.log) {
 		// FIXME might not be correct handling of this case
 		reply.Success = false
-		return fmt.Errorf("saw an out of bounds prevLogIndex %v", arg.PrevLogIndex)
+		fmt.Printf("(Follower AppendEntries) error: saw an out of bounds prevLogIndex %v", arg.PrevLogIndex)
+		return nil
 	}
 	if s.log[arg.PrevLogIndex].Term != arg.PrevLogTerm {
 		reply.Success = false
