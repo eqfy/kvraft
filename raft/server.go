@@ -713,8 +713,6 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 }
 
 func (s* Server) leaderServiceCommand(clientCommand ClientCommand){
-	fmt.Printf("(Leader AppendEntries): Preparing to send request=%v to followers.\n", clientCommand)
-
 	newEntry := Entry{
 		Term:    s.currentTerm,
 		Command: clientCommand.command,
@@ -727,21 +725,20 @@ func (s* Server) leaderServiceCommand(clientCommand ClientCommand){
 	s.log = append(s.log, newEntry)
 	
 	currPeers := len(s.Peers) - 1
-	peerReply := make(chan bool)
+	peerReplies := make(chan bool, currPeers)	// buffer channel
 	majorityReplied := make(chan bool)
 
 	/* listen for async AppendEntry responses*/
-	go s.countReplies(currPeers, peerReply, majorityReplied)
+	go s.countReplies(currPeers, peerReplies, majorityReplied)
 
-	fmt.Printf("(Leader AppendEntries): sending AppendEntries=%v to followers.\n", *appendEntryArg)
+	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", *appendEntryArg)
 	for i, peer := range s.Peers {
 		if uint8(i + 1) == s.ServerId{
 			continue
 		}
-		go s.sendAppendEntry(peer, appendEntryArg, peerReply)
+		go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
 	}
 	/* Can return once we have a majority*/
-	fmt.Printf("(Leader AppendEntries): Waiting for majority\n")
 	<- majorityReplied
 
 	/* Mark entry as committed, and notify server to update kv state*/
@@ -752,24 +749,23 @@ func (s* Server) leaderServiceCommand(clientCommand ClientCommand){
 	clientCommand.done <- clientCommand.command
 }
 
-func (s* Server) countReplies(currPeers int, peerReply chan bool, majorityReplied chan bool){
-	fmt.Println("(Leader RECEIVE REPLIES): Listening for AppendEntry Responses...")
-	count := 0
+func (s* Server) countReplies(currPeers int, peerReplies chan bool, majorityReplied chan bool){
 	majority := s.Majority - 1 /* subtract itself*/
+	count := 0
+
 	for count < currPeers {
-		select{
-			case <- peerReply:
-				count += 1
-				if uint8(count) == majority{
-					fmt.Println("(Leader RECEIVE REPLIES): Majority reached!")
-					majorityReplied <- true
-				}
+		<-peerReplies    // wait for one task to complete
+		count++
+		if uint8(count) == majority{
+			fmt.Println("(Leader RECEIVE REPLIES): Majority reached")
+			majorityReplied <- true
 		}
 	}
+	fmt.Println("(Leader RECEIVE REPLIES): All followers acked.")
 }
 
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
-func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReply chan bool) (error){
+func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool) (error){
 	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
 	defer peerConn.Close()
 	if err != nil{
@@ -781,27 +777,25 @@ func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 	for {
 		peerConn.Go("Server.AppendEntries", args, &reply, done)
 		select {
-			/* leader retries indefinitely if can't reach follower*/
-			case <-time.After(20 * time.Second):
-				continue
-			case call := <-done:
-				if call.Error == nil {
-					res := call.Reply.(*AppendEntriesReply)
-					fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
-					if !res.Success{
-						/* To-Do: force copy logs*/
-					} else {
-						peerReply <- true
-						return nil
-					}
+		/* leader retries indefinitely if can't reach follower*/
+		case <-time.After(20 * time.Second):
+			continue
+		case call := <-done:
+			if call.Error == nil {
+				res := call.Reply.(*AppendEntriesReply)
+				fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
+				if !res.Success{
+					/* To-Do: force copy logs*/
 				} else {
-					fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", call.Error, peer.ServerId)
-					return call.Error	// what to do when AppendEntry returns error?
+					peerReplies <- true
+					return nil
 				}
+			} else {
+				fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", call.Error, peer.ServerId)
+				return call.Error	// what to do when AppendEntry returns error?
+			}
 		}
 	}
-	
-
 }
 
 func (s *Server) applyEntry(entry Entry) (Command, error) {
@@ -832,10 +826,7 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
 	// FIXME maybe instead of doing this, we can just look at s.isLeader
 	<-s.appendEntriesCanRespond
-	if (arg.LeaderCommit > s.commitIndex){
-		s.commitIndex = arg.LeaderCommit
-		s.commitIndexUpdated <- true
-	}
+
 	// Ensure that the arg entries are in ASC order according to index
 	sort.Slice(arg.Entries, func(i, j int) bool {
 		return arg.Entries[i].Index < arg.Entries[j].Index
@@ -894,6 +885,7 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 		} else {
 			s.commitIndex = s.log[len(s.log)-1].Index
 		}
+		s.commitIndexUpdated <- true
 	}
 	reply.Success = true
 	reply.Term = arg.Term
