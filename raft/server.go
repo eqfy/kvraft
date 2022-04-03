@@ -8,7 +8,8 @@ import (
 	"os"
 	"sort"
 	"sync"
-
+	"time"
+	"math"
 	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/util"
 	"github.com/DistributedClocks/tracing"
@@ -76,14 +77,12 @@ type PutRequest struct {
 	OpId                  uint32
 	Key                   string
 	Value                 string
-	LocalTailServerIPPort string
 	Token                 tracing.TracingToken
 }
 
 type PutResponse struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
 	Key      string
 	Value    string
 	Token    tracing.TracingToken
@@ -128,6 +127,8 @@ type Server struct {
 	// Server state may go here
 	ServerId   uint8
 	Peers      []ServerInfo
+	ClusterSize   uint8				/* original cluster size*/
+	Majority 	uint8
 	Config     Addr
 	trace      *tracing.Trace
 	tracer     *tracing.Tracer
@@ -149,8 +150,7 @@ type Server struct {
 	matchIndex []uint64
 
 	// all servers
-	commitIndexUpdated               chan uint64
-	lastAppliedUpdated               chan uint64
+	commitIndexUpdated               chan bool
 	rpcGotTermGreaterThanCurrentTerm chan uint32
 
 	// follower
@@ -173,17 +173,17 @@ type Server struct {
 
 // AppendEntries RPC
 type AppendEntriesArg struct {
-	term         uint32
-	leaderId     uint8
-	prevLogIndex uint64
-	prevLogTerm  uint32
-	entries      []Entry
-	leaderCommit uint64
+	Term         uint32
+	LeaderId     uint8
+	PrevLogIndex uint64
+	PrevLogTerm  uint32
+	Entries      []Entry
+	LeaderCommit uint64
 }
 
 type AppendEntriesReply struct {
-	term    uint32
-	success bool
+	Term    uint32
+	Success bool
 }
 
 // RequestVote RPC (Unused)
@@ -202,9 +202,9 @@ type RequestVoteReply struct {
 
 // Log entry definition
 type Entry struct {
-	term    uint32
-	command Command
-	index   uint64
+	Term    uint32
+	Command Command
+	Index   uint64
 }
 
 type ClientCommand struct {
@@ -213,9 +213,9 @@ type ClientCommand struct {
 }
 
 type Command struct {
-	kind CommandKind
-	key  string
-	val  string
+	Kind CommandKind
+	Key  string
+	Val  string
 }
 
 type CommandKind int
@@ -243,7 +243,6 @@ type GetRequest struct {
 type GetResponse struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
 	Key      string
 	Value    string
 	Token    tracing.TracingToken
@@ -265,6 +264,7 @@ func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serv
 
 	go startFcheck(serverAddr, int(serverId), s)
 	go listenForCoord(s, serverAddr)
+	go listenForServs(s, serverListenAddr)
 
 	joinOnStartup(s)
 	<-joinComplete
@@ -283,15 +283,20 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	s.trace = strace.CreateTrace()
 	s.tracer = strace
 
+	// values
+	s.commitIndex = 0
+	s.lastApplied = 0
+
 	// raft persistent state
 	s.kv = make(map[string]string)
+	s.log = make([]Entry,0)
+	s.log = append(s.log, Entry{})	// log is 1-indexed
 
 	// join sync
 	joinComplete = make(chan bool)
 
 	// all server sync
-	s.commitIndexUpdated = make(chan uint64)
-	s.lastAppliedUpdated = make(chan uint64)
+	s.commitIndexUpdated = make(chan bool)
 	s.rpcGotTermGreaterThanCurrentTerm = make(chan uint32)
 
 	// follower sync
@@ -335,6 +340,9 @@ func (s *Server) FindServerStateOnStartup(coordReply JoinResponse, reply *Server
 		s.runFollower <- true
 	}
 	s.Peers = coordReply.Peers
+	s.ClusterSize = uint8(len(coordReply.Peers))
+	s.currentTerm = coordReply.Term
+	s.Majority = uint8(math.Ceil(float64(s.ClusterSize)/float64(2)))
 	fmt.Printf("Peers: %v\n TermNumber: %v\n", coordReply.Peers, coordReply.Term)
 
 	s.trace.RecordAction(ServerJoined{s.ServerId})
@@ -348,6 +356,22 @@ func (s *Server) JoinDoneReturnTokenTrace(req TokenRequest, res *bool) (err erro
 	s.tracer.ReceiveToken(req.Token)
 	return
 }
+
+/* listen for AppendEntries from leader*/
+func listenForServs(s *Server, serverListenAddr string) {
+	rpc.Register(s)
+
+	// Create a TCP listener that will listen on `Port`
+	tcpAddr, err := net.ResolveTCPAddr("tcp", serverListenAddr)
+	util.CheckErr(err, "Can't resolve address %s", serverListenAddr)
+
+	// Close the listener whenever we stop
+	listener, err := net.ListenTCP("tcp", tcpAddr)
+	util.CheckErr(err, "Can't listen on address %s", serverListenAddr)
+	fmt.Printf("Waiting for incoming servers...")
+	s.Accept(listener) /* Serve each server in new go routinue*/
+}
+
 
 func listenForCoord(s *Server, serverAddr string) {
 	rpc.Register(s)
@@ -467,10 +491,11 @@ func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *Notify
 // GetLogState TEMPLATE coord calls this during leader selection to determine the next
 // best leader
 func (s *Server) GetLogState(request ServerLogStateRequest, reply *ServerLogState) error {
+	prevLogEntry := s.log[len(s.log) - 1]
 	*reply = ServerLogState{
 		ServerId: s.ServerId,
-		Term:     uint8(s.currentTerm),
-		LogIdx:   len(s.log) - 1,
+		Term:     prevLogEntry.Term,
+		LogIdx:   prevLogEntry.Index,
 	}
 	return nil
 }
@@ -480,8 +505,7 @@ func (s *Server) Terminate(notification TerminateNotification, reply *bool) erro
 	return nil
 }
 
-// TODO
-func (s *Server) Get(arg GetRequest, resp GetResponse) {
+func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 	gtrace := s.tracer.ReceiveToken(arg.Token)
 	gtrace.RecordAction(GetRecvd{
 		ClientId: arg.ClientId,
@@ -493,8 +517,8 @@ func (s *Server) Get(arg GetRequest, resp GetResponse) {
 
 	clientCommand := ClientCommand{
 		command: Command{
-			kind: Get,
-			key:  arg.Key,
+			Kind: Get,
+			Key:  arg.Key,
 		},
 		done: done,
 	}
@@ -504,13 +528,13 @@ func (s *Server) Get(arg GetRequest, resp GetResponse) {
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
 	//TODO replace
-	resp.Key = command.key
-	resp.Value = command.val
+	resp.Key = command.Key
+	resp.Value = command.Val
 	resp.Token = gtrace.GenerateToken()
+	return nil
 }
 
-// TODO
-func (s *Server) Put(arg PutRequest, resp PutResponse) {
+func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 	ptrace := s.tracer.ReceiveToken(arg.Token)
 	ptrace.RecordAction(PutRecvd{
 		ClientId: arg.ClientId,
@@ -523,20 +547,24 @@ func (s *Server) Put(arg PutRequest, resp PutResponse) {
 
 	clientCommand := ClientCommand{
 		command: Command{
-			kind: Put,
-			key:  arg.Key,
-			val:  arg.Value,
+			Kind: Put,
+			Key:  arg.Key,
+			Val:  arg.Value,
 		},
 		done: done,
 	}
+
+	fmt.Printf("(Leader Put): received client command=%v\n", clientCommand)
+
 	s.commandFromClient <- clientCommand
 	command := <-clientCommand.done
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
-	resp.Key = command.key
-	resp.Value = command.val
+	resp.Key = command.Key
+	resp.Value = command.Val
 	resp.Token = ptrace.GenerateToken()
+	return nil
 }
 
 func (s *Server) runRaft() {
@@ -569,8 +597,7 @@ func (s *Server) raftFollower(errorChan chan<- error) {
 }
 
 func (s *Server) raftFollowerLoop(errorChan chan<- error) {
-	var err error
-
+	// var err error
 	s.appendEntriesCanRespond <- true
 	for {
 		select {
@@ -578,20 +605,8 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 			if !canRunFollower {
 				return
 			}
-		case commitIndex := <-s.commitIndexUpdated:
-			if commitIndex > s.lastApplied {
-				_, err = s.applyEntry(s.log[s.lastApplied])
-				if err != nil {
-					errorChan <- err
-				}
-			}
-		case lastApplied := <-s.lastAppliedUpdated:
-			if s.commitIndex > lastApplied {
-				_, err = s.applyEntry(s.log[s.lastApplied])
-				if err != nil {
-					errorChan <- err
-				}
-			}
+		case <-s.commitIndexUpdated:
+			s.doCommit(errorChan)
 		case <-s.appendEntriesDone:
 			s.appendEntriesCanRespond <- true
 		}
@@ -642,41 +657,23 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		set commitIndex = N (§5.3, §5.4)
 	*/
 
-	var err error
+	// var err error
 	for {
 		select {
 		case canRunLeader := <-s.runLeader:
 			if !canRunLeader {
 				return
 			}
-		case commitIndex := <-s.commitIndexUpdated:
-			if commitIndex > s.lastApplied {
-				_, err = s.applyEntry(s.log[s.lastApplied])
-				if err != nil {
-					errorChan <- err
-				}
-			}
-		case lastApplied := <-s.lastAppliedUpdated:
-			if s.commitIndex > lastApplied {
-				_, err = s.applyEntry(s.log[s.lastApplied])
-				if err != nil {
-					errorChan <- err
-				}
-			}
+		case <-s.commitIndexUpdated:
+			s.doCommit(errorChan)
 		case newTerm := <-s.rpcGotTermGreaterThanCurrentTerm:
 			s.currentTerm = newTerm
 			s.runFollower <- true
 			s.runLeader <- false
 			return
 		case clientCommand := <-s.commandFromClient:
-			s.log = append(s.log, Entry{
-				term:    s.currentTerm,
-				command: clientCommand.command,
-				index:   uint64(len(s.log)),
-			})
-			// TODO send appendEntries to all followers
-			// Commit the entry once most followers responded?
-			clientCommand.done <- clientCommand.command
+			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
+			go s.leaderHandleCommand(clientCommand)
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
 		case <-s.existsInterestingN:
@@ -686,19 +683,120 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
+func (s* Server) doCommit(errorChan chan<- error){
+	for s.commitIndex > s.lastApplied {
+		s.lastApplied++
+		_, err := s.applyEntry(s.log[s.commitIndex])
+		if err != nil {
+			errorChan <- err
+		}
+	}
+}
+
+func (s* Server) leaderHandleCommand(clientCommand ClientCommand){
+	/*  - Send AppendEntries in parallel to all peers.
+		- Once majority acks, return clientCommand.done <- clientCommand.command */
+	newEntry := Entry{
+		Term:    s.currentTerm,
+		Command: clientCommand.command,
+		Index:   uint64(len(s.log)),
+	}
+	prevLogEntry := s.log[len(s.log) - 1]
+	appendEntryArg := &AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex}
+	
+	/* Append to my log*/
+	s.log = append(s.log, newEntry)
+	
+	currPeers := len(s.Peers) - 1
+	peerReplies := make(chan bool, currPeers)	// buffer channel
+	majorityReplied := make(chan bool)
+
+	/* listen for async AppendEntry responses*/
+	go s.countReplies(currPeers, peerReplies, majorityReplied)
+
+	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", *appendEntryArg)
+	for i, peer := range s.Peers {
+		if uint8(i + 1) == s.ServerId{
+			continue
+		}
+		go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
+	}
+	/* Can return once we have a majority*/
+	<- majorityReplied
+
+	/* Mark entry as committed, and notify server to update kv state*/
+	s.commitIndex += 1
+	s.commitIndexUpdated <- true
+	fmt.Printf("(Leader AppendEntries): Successfully replicated entry=%v on majority, commitIndex updated to be %d\n", newEntry, s.commitIndex)
+
+	clientCommand.done <- clientCommand.command
+}
+
+func (s* Server) countReplies(currPeers int, peerReplies chan bool, majorityReplied chan bool){
+	majority := s.Majority - 1 /* subtract itself*/
+	count := 0
+
+	for count < currPeers {
+		<-peerReplies    // wait for one task to complete
+		count++
+		if uint8(count) == majority{
+			fmt.Println("(Leader RECEIVE REPLIES): Majority reached")
+			majorityReplied <- true
+		}
+	}
+	fmt.Println("(Leader RECEIVE REPLIES): All followers acked.")
+}
+
+/* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
+func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool) (error){
+	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
+	defer peerConn.Close()
+	if err != nil{
+		fmt.Printf("Can't connect to peer id=%d, address=%s, error=%v\n", peer.ServerId, peer.ServerListenAddr, err)
+		return err
+	}
+	var reply AppendEntriesReply
+	done := make(chan *rpc.Call, 1)
+	for {
+		peerConn.Go("Server.AppendEntries", args, &reply, done)
+		select {
+		/* leader retries indefinitely if can't reach follower*/
+		case <-time.After(20 * time.Second):
+			continue
+		case call := <-done:
+			if call.Error == nil {
+				res := call.Reply.(*AppendEntriesReply)
+				fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
+				if !res.Success{
+					/* To-Do: force copy logs*/
+				} else {
+					peerReplies <- true
+					return nil
+				}
+			} else {
+				fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", call.Error, peer.ServerId)
+				return call.Error	// what to do when AppendEntry returns error?
+			}
+		}
+	}
+}
+
 func (s *Server) applyEntry(entry Entry) (Command, error) {
-	switch entry.command.kind {
+	switch entry.Command.Kind {
 	case Put:
 		// TODO lock this and return result of put
 		s.L.Lock()
-		s.kv[entry.command.key] = entry.command.val
+		s.kv[entry.Command.Key] = entry.Command.Val
+		newVal := s.kv[entry.Command.Key]
+		fmt.Printf("(KV STATE): %v\n", s.kv)
 		s.L.Unlock()
-		return Command{kind: Get, key: entry.command.key, val: entry.command.val}, nil
+		fmt.Printf("(KV STATE): Applied Entry, Key: %s, Val: %s\n", entry.Command.Key, newVal)
+		return Command{Kind: Get, Key: entry.Command.Key, Val: entry.Command.Val}, nil
 	case Get:
 		// TODO return result of get
-		command := Command{kind: Get, key: entry.command.key}
+		command := Command{Kind: Get, Key: entry.Command.Key}
 		s.L.Lock()
-		command.val = s.kv[entry.command.key]
+		command.Val = s.kv[entry.Command.Key]
 		s.L.Unlock()
 		return command, nil
 	default:
@@ -712,48 +810,48 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	<-s.appendEntriesCanRespond
 
 	// Ensure that the arg entries are in ASC order according to index
-	sort.Slice(arg.entries, func(i, j int) bool {
-		return arg.entries[i].index < arg.entries[j].index
+	sort.Slice(arg.Entries, func(i, j int) bool {
+		return arg.Entries[i].Index < arg.Entries[j].Index
 	})
-
 	// Ensure that the arg entries are consecutive
-	for i := 1; i < len(arg.entries); i++ {
-		if arg.entries[i-1].index+1 != arg.entries[i].index {
-			reply.success = false
-			return fmt.Errorf("arg entries should be consecutive, %v", arg.entries)
+	for i := 1; i < len(arg.Entries); i++ {
+		if arg.Entries[i-1].Index+1 != arg.Entries[i].Index {
+			reply.Success = false
+			return fmt.Errorf("arg entries should be consecutive, %v", arg.Entries)
 		}
 	}
 
 	// 1. Reply false if term < currentTerm (§5.1)
-	if arg.term < s.currentTerm {
-		reply.success = false
+	if arg.Term < s.currentTerm {
+		reply.Success = false
 		return nil
 	}
 
 	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
-	if int(arg.prevLogIndex) >= len(s.log) {
+	if int(arg.PrevLogIndex) >= len(s.log) {
 		// FIXME might not be correct handling of this case
-		reply.success = false
-		return fmt.Errorf("saw an out of bounds prevLogIndex %v", arg.prevLogIndex)
+		reply.Success = false
+		fmt.Printf("(Follower AppendEntries) error: saw an out of bounds prevLogIndex %v", arg.PrevLogIndex)
+		return nil
 	}
-	if s.log[arg.prevLogIndex].term != arg.prevLogTerm {
-		reply.success = false
+	if s.log[arg.PrevLogIndex].Term != arg.PrevLogTerm {
+		reply.Success = false
 		return nil
 	}
 
 	// 3. If an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it (§5.3)
 	deleteStartIndex := len(s.log)
-	appendStartIndex := len(arg.entries)
-	for i := 0; i < len(arg.entries); i++ {
-		currEntry := arg.entries[i]
-		if int(currEntry.index) >= len(s.log) {
+	appendStartIndex := len(arg.Entries)
+	for i := 0; i < len(arg.Entries); i++ {
+		currEntry := arg.Entries[i]
+		if int(currEntry.Index) >= len(s.log) {
 			if i < appendStartIndex {
 				appendStartIndex = i
 			}
 			break
-		} else if currEntry.term != s.log[currEntry.index].term ||
-			currEntry.command != s.log[currEntry.index].command {
-			deleteStartIndex = int(currEntry.index)
+		} else if currEntry.Term != s.log[currEntry.Index].Term ||
+			currEntry.Command != s.log[currEntry.Index].Command {
+			deleteStartIndex = int(currEntry.Index)
 			appendStartIndex = i
 			break
 		}
@@ -761,18 +859,19 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	s.log = s.log[:deleteStartIndex]
 
 	// 4. Append any new entries not already in the log
-	s.log = append(s.log, arg.entries[appendStartIndex:]...)
+	s.log = append(s.log, arg.Entries[appendStartIndex:]...)
 
 	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
-	if arg.leaderCommit > s.commitIndex {
-		if arg.leaderCommit < s.log[len(s.log)-1].index {
-			s.commitIndex = arg.leaderCommit
+	if arg.LeaderCommit > s.commitIndex {
+		if arg.LeaderCommit < s.log[len(s.log)-1].Index {
+			s.commitIndex = arg.LeaderCommit
 		} else {
-			s.commitIndex = s.log[len(s.log)-1].index
+			s.commitIndex = s.log[len(s.log)-1].Index
 		}
+		s.commitIndexUpdated <- true
 	}
-	reply.success = true
-	reply.term = arg.term
+	reply.Success = true
+	reply.Term = arg.Term
 	s.appendEntriesDone <- true
 	return nil
 }
