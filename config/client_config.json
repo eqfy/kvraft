@@ -5,7 +5,7 @@
   "LocalHeadServerIPPort": "127.0.0.1:1236",
   "LocalTailServerIPPort": "127.0.0.1:1237",
   "ChCapacity": 1,
-  "TracingServerAddr": ":6666",
+  "TracingServerAddr": "127.0.0.1:23000",
   "Secret": "",
   "TracingIdentity": "client1"
 }
