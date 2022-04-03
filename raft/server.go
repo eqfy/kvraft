@@ -744,8 +744,6 @@ func (s* Server) leaderServiceCommand(clientCommand ClientCommand){
 	fmt.Printf("(Leader AppendEntries): Waiting for majority\n")
 	<- majorityReplied
 
-	fmt.Printf("here...")
-
 	/* Mark entry as committed, and notify server to update kv state*/
 	s.commitIndex += 1
 	s.commitIndexUpdated <- true
@@ -755,7 +753,7 @@ func (s* Server) leaderServiceCommand(clientCommand ClientCommand){
 }
 
 func (s* Server) countReplies(currPeers int, peerReply chan bool, majorityReplied chan bool){
-	fmt.Println("(Leader): Listening for AppendEntry Responses...")
+	fmt.Println("(Leader RECEIVE REPLIES): Listening for AppendEntry Responses...")
 	count := 0
 	majority := s.Majority - 1 /* subtract itself*/
 	for count < currPeers {
@@ -763,7 +761,7 @@ func (s* Server) countReplies(currPeers int, peerReply chan bool, majorityReplie
 			case <- peerReply:
 				count += 1
 				if uint8(count) == majority{
-					fmt.Println("(Leader AppendEntries): Majority reached!")
+					fmt.Println("(Leader RECEIVE REPLIES): Majority reached!")
 					majorityReplied <- true
 				}
 		}
