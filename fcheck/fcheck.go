@@ -21,8 +21,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
-import "time"
 
 ////////////////////////////////////////////////////// DATA
 // Define the message types fchecker has to use to communicate to other
@@ -172,7 +172,7 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
 			continueSendReceive := true
 			var unackedHeartBeats = map[int]time.Time{}
 
-			fname := "./LOGS-FCHECK-" + strconv.FormatUint(arg.EpochNonce, 10)
+			fname := "./LOGS-FCHECK-" + strconv.FormatUint(arg.EpochNonce, 10) + ".log"
 			f, fileErr := os.Create(fname)
 			check(fileErr)
 			defer f.Close()
@@ -326,7 +326,7 @@ func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureD
 			continueSendReceive := true
 			var unackedHeartBeats = map[int]time.Time{}
 
-			fname := "./LOGS-FCHECK-" + strconv.FormatInt(int64(nonce), 10)
+			fname := "./LOGS-FCHECK-" + strconv.FormatInt(int64(nonce), 10) + ".log"
 			f, fileErr := os.Create(fname)
 			check(fileErr)
 			defer f.Close()
