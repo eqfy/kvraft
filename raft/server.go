@@ -163,10 +163,10 @@ type Server struct {
 	runCandidate chan bool
 
 	// leader
-	commandFromClient                    chan ClientCommand
-	followerLogIndexGreaterThanNextIndex chan bool // probably follower info
-	existsInterestingN                   chan bool
-	runLeader                            chan bool
+	commandFromClient  chan ClientCommand
+	triggerForceUpdate chan bool // probably follower info
+	existsInterestingN chan bool
+	runLeader          chan bool
 
 	// Lock
 	L sync.RWMutex
@@ -640,10 +640,8 @@ func (s *Server) raftLeader(errorChan chan<- error) {
 		// init volatile state
 		s.commitIndex = 0
 		s.lastApplied = 0
+		s.initLeaderVolatileState()
 
-		// init leader volatile state
-		s.nextIndex = make([]uint64, len(s.Peers))
-		s.matchIndex = make([]uint64, len(s.Peers))
 		if canRunLeader {
 			s.raftLeaderLoop(errorChan)
 		}
@@ -685,13 +683,46 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		case clientCommand := <-s.commandFromClient:
 			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
 			go s.leaderHandleCommand(clientCommand)
-		case <-s.followerLogIndexGreaterThanNextIndex:
-			// TODO
+		case <-s.triggerForceUpdate:
+			// FIXME When is matchIndex and nextIndex updated?
+			prevLogEntry := s.log[len(s.log)-1]
+			forceUpdateWg := sync.WaitGroup{}
+			for i, peer := range s.Peers {
+				go func() {
+					if s.matchIndex[i] >= s.nextIndex[i] {
+						peerReply := make(chan bool, 1)
+
+						for {
+							appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[i]:], s.commitIndex}
+							go s.sendAppendEntry(peer, &appendEntryArg, peerReply)
+							success := <-peerReply
+							if success {
+								s.nextIndex[i] = prevLogEntry.Index + 1
+								s.matchIndex[i] = prevLogEntry.Index
+								break
+							}
+							s.nextIndex[i] -= 1
+						}
+					}
+				}()
+
+			}
+			forceUpdateWg.Wait()
+
 		case <-s.existsInterestingN:
 			// TODO
 		}
 	}
 
+}
+
+func (s *Server) initLeaderVolatileState() {
+	s.nextIndex = make([]uint64, len(s.Peers))
+	s.matchIndex = make([]uint64, len(s.Peers))
+	for i := 0; i < len(s.Peers); i++ {
+		s.nextIndex[i] = uint64(len(s.log))
+		s.matchIndex[i] = 0
+	}
 }
 
 func (s *Server) doCommit(errorChan chan<- error) {
@@ -780,6 +811,7 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
 					/* To-Do: force copy logs*/
+					peerReplies <- false
 				} else {
 					peerReplies <- true
 					return nil
