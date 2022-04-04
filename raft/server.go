@@ -688,10 +688,10 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			prevLogEntry := s.log[len(s.log)-1]
 			forceUpdateWg := sync.WaitGroup{}
 			for i, peer := range s.Peers {
-				go func() {
-					if s.matchIndex[i] >= s.nextIndex[i] {
-						peerReply := make(chan bool, 1)
-
+				if s.matchIndex[i] >= s.nextIndex[i] {
+					forceUpdateWg.Add(1)
+					peerReply := make(chan bool, 1)
+					go func() {
 						for {
 							appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[i]:], s.commitIndex}
 							go s.sendAppendEntry(peer, &appendEntryArg, peerReply)
@@ -699,13 +699,13 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 							if success {
 								s.nextIndex[i] = prevLogEntry.Index + 1
 								s.matchIndex[i] = prevLogEntry.Index
+								forceUpdateWg.Done()
 								break
 							}
 							s.nextIndex[i] -= 1
 						}
-					}
-				}()
-
+					}()
+				}
 			}
 			forceUpdateWg.Wait()
 
