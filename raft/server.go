@@ -1,18 +1,18 @@
 package raft
 
 import (
+	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
+	"cs.ubc.ca/cpsc416/kvraft/util"
 	"errors"
 	"fmt"
+	"github.com/DistributedClocks/tracing"
+	"math"
 	"net"
 	"net/rpc"
 	"os"
 	"sort"
 	"sync"
 	"time"
-	"math"
-	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
-	"cs.ubc.ca/cpsc416/kvraft/util"
-	"github.com/DistributedClocks/tracing"
 )
 
 // Tracing
@@ -73,11 +73,11 @@ type PutResult struct {
 }
 
 type PutRequest struct {
-	ClientId              string
-	OpId                  uint32
-	Key                   string
-	Value                 string
-	Token                 tracing.TracingToken
+	ClientId string
+	OpId     uint32
+	Key      string
+	Value    string
+	Token    tracing.TracingToken
 }
 
 type PutResponse struct {
@@ -125,14 +125,14 @@ type Addr struct {
 
 type Server struct {
 	// Server state may go here
-	ServerId   uint8
-	Peers      []ServerInfo
-	ClusterSize   uint8				/* original cluster size*/
-	Majority 	uint8
-	Config     Addr
-	trace      *tracing.Trace
-	tracer     *tracing.Tracer
-	fcheckAddr string
+	ServerId    uint8
+	Peers       []ServerInfo
+	ClusterSize uint8 /* original cluster size*/
+	Majority    uint8
+	Config      Addr
+	trace       *tracing.Trace
+	tracer      *tracing.Tracer
+	fcheckAddr  string
 
 	isLeader bool
 
@@ -271,6 +271,12 @@ func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serv
 
 	/* Join complete, ready to take client requests*/
 	go s.runRaft()
+
+	// try to mock a network partition by
+	// having a subset of nodes not respond
+	// to coord's heartbeats
+	// simulateNetworkPartition(s)
+
 	listenForClient(s)
 
 	return nil
@@ -289,8 +295,8 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 
 	// raft persistent state
 	s.kv = make(map[string]string)
-	s.log = make([]Entry,0)
-	s.log = append(s.log, Entry{})	// log is 1-indexed
+	s.log = make([]Entry, 0)
+	s.log = append(s.log, Entry{}) // log is 1-indexed
 
 	// join sync
 	joinComplete = make(chan bool)
@@ -342,7 +348,7 @@ func (s *Server) FindServerStateOnStartup(coordReply JoinResponse, reply *Server
 	s.Peers = coordReply.Peers
 	s.ClusterSize = uint8(len(coordReply.Peers))
 	s.currentTerm = coordReply.Term
-	s.Majority = uint8(math.Ceil(float64(s.ClusterSize)/float64(2)))
+	s.Majority = uint8(math.Ceil(float64(s.ClusterSize) / float64(2)))
 	fmt.Printf("Peers: %v\n TermNumber: %v\n", coordReply.Peers, coordReply.Term)
 
 	s.trace.RecordAction(ServerJoined{s.ServerId})
@@ -371,7 +377,6 @@ func listenForServs(s *Server, serverListenAddr string) {
 	fmt.Printf("Waiting for incoming servers...")
 	s.Accept(listener) /* Serve each server in new go routinue*/
 }
-
 
 func listenForCoord(s *Server, serverAddr string) {
 	rpc.Register(s)
@@ -470,20 +475,8 @@ func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
 	return nil
 }
 
-// NotifyServerFailure Needs to be deleted. Just keeping it for now to avoid coord refactoring
-// will remove it soon
-func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *NotifyServerFailureAck) error {
-	fmt.Println("Received server failure notification for server with id: ", notification.FailedServerId)
-	// trace action
-	cTrace := s.tracer.ReceiveToken(notification.Token)
-	for _, servId := range notification.FailedServerId {
-		cTrace.RecordAction(ServerFailRecvd{FailedServerId: servId})
-	}
-	return nil
-}
-
 // NotifyFailOverLeader TEMPLATE Server learns it's the new leader when coord calls this
-func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *NotifyServerFailureAck) error {
+func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *LeaderFailOverAck) error {
 	fmt.Println("Received leader failure notification. I'm the new leader.")
 	return nil
 }
@@ -491,7 +484,7 @@ func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *Notify
 // GetLogState TEMPLATE coord calls this during leader selection to determine the next
 // best leader
 func (s *Server) GetLogState(request ServerLogStateRequest, reply *ServerLogState) error {
-	prevLogEntry := s.log[len(s.log) - 1]
+	prevLogEntry := s.log[len(s.log)-1]
 	*reply = ServerLogState{
 		ServerId: s.ServerId,
 		Term:     prevLogEntry.Term,
@@ -502,6 +495,8 @@ func (s *Server) GetLogState(request ServerLogStateRequest, reply *ServerLogStat
 
 // Terminate If coord detects majority failures, system shuts down
 func (s *Server) Terminate(notification TerminateNotification, reply *bool) error {
+	fmt.Println("FATAL Quorum of nodes unavailable. Shutting down")
+	os.Exit(2)
 	return nil
 }
 
@@ -572,6 +567,10 @@ func (s *Server) runRaft() {
 	go s.raftFollower(serverErrorChan)
 	// go s.raftCandidate(serverErrorChan)
 	go s.raftLeader(serverErrorChan)
+
+	// testing leaderSelection by mocking
+	// incosistent logs amongnst nodes
+	// mockLogs(s)
 
 	for {
 		err := <-serverErrorChan
@@ -683,7 +682,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
-func (s* Server) doCommit(errorChan chan<- error){
+func (s *Server) doCommit(errorChan chan<- error) {
 	for s.commitIndex > s.lastApplied {
 		s.lastApplied++
 		_, err := s.applyEntry(s.log[s.commitIndex])
@@ -693,22 +692,22 @@ func (s* Server) doCommit(errorChan chan<- error){
 	}
 }
 
-func (s* Server) leaderHandleCommand(clientCommand ClientCommand){
+func (s *Server) leaderHandleCommand(clientCommand ClientCommand) {
 	/*  - Send AppendEntries in parallel to all peers.
-		- Once majority acks, return clientCommand.done <- clientCommand.command */
+	- Once majority acks, return clientCommand.done <- clientCommand.command */
 	newEntry := Entry{
 		Term:    s.currentTerm,
 		Command: clientCommand.command,
 		Index:   uint64(len(s.log)),
 	}
-	prevLogEntry := s.log[len(s.log) - 1]
+	prevLogEntry := s.log[len(s.log)-1]
 	appendEntryArg := &AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex}
-	
+
 	/* Append to my log*/
 	s.log = append(s.log, newEntry)
-	
+
 	currPeers := len(s.Peers) - 1
-	peerReplies := make(chan bool, currPeers)	// buffer channel
+	peerReplies := make(chan bool, currPeers) // buffer channel
 	majorityReplied := make(chan bool)
 
 	/* listen for async AppendEntry responses*/
@@ -716,13 +715,13 @@ func (s* Server) leaderHandleCommand(clientCommand ClientCommand){
 
 	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", *appendEntryArg)
 	for i, peer := range s.Peers {
-		if uint8(i + 1) == s.ServerId{
+		if uint8(i+1) == s.ServerId {
 			continue
 		}
 		go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
 	}
 	/* Can return once we have a majority*/
-	<- majorityReplied
+	<-majorityReplied
 
 	/* Mark entry as committed, and notify server to update kv state*/
 	s.commitIndex += 1
@@ -732,14 +731,14 @@ func (s* Server) leaderHandleCommand(clientCommand ClientCommand){
 	clientCommand.done <- clientCommand.command
 }
 
-func (s* Server) countReplies(currPeers int, peerReplies chan bool, majorityReplied chan bool){
+func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityReplied chan bool) {
 	majority := s.Majority - 1 /* subtract itself*/
 	count := 0
 
 	for count < currPeers {
-		<-peerReplies    // wait for one task to complete
+		<-peerReplies // wait for one task to complete
 		count++
-		if uint8(count) == majority{
+		if uint8(count) == majority {
 			fmt.Println("(Leader RECEIVE REPLIES): Majority reached")
 			majorityReplied <- true
 		}
@@ -748,10 +747,10 @@ func (s* Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 }
 
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
-func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool) (error){
+func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool) error {
 	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
 	defer peerConn.Close()
-	if err != nil{
+	if err != nil {
 		fmt.Printf("Can't connect to peer id=%d, address=%s, error=%v\n", peer.ServerId, peer.ServerListenAddr, err)
 		return err
 	}
@@ -767,7 +766,7 @@ func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 			if call.Error == nil {
 				res := call.Reply.(*AppendEntriesReply)
 				fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
-				if !res.Success{
+				if !res.Success {
 					/* To-Do: force copy logs*/
 				} else {
 					peerReplies <- true
@@ -775,7 +774,7 @@ func (s* Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				}
 			} else {
 				fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", call.Error, peer.ServerId)
-				return call.Error	// what to do when AppendEntry returns error?
+				return call.Error // what to do when AppendEntry returns error?
 			}
 		}
 	}
@@ -874,4 +873,48 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	reply.Term = arg.Term
 	s.appendEntriesDone <- true
 	return nil
+}
+
+func mockLogs(s *Server) {
+	if s.ServerId == 1 || s.ServerId == 3 || s.ServerId == 5 {
+		for i := 1; i < 10; i++ {
+			term := 1
+			if i > 5 {
+				term = 2
+			}
+			entry := Entry{
+				Term:    uint32(term),
+				Command: Command{},
+				Index:   uint64(i),
+			}
+			s.log = append(s.log, entry)
+		}
+	}
+	if s.ServerId == 2 || s.ServerId == 4 {
+		for i := 1; i < 13; i++ {
+			term := 1
+			if i > 5 {
+				term = 2
+			}
+			if i > 10 && s.ServerId == 4 {
+				term = 5
+			}
+			entry := Entry{
+				Term:    uint32(term),
+				Command: Command{},
+				Index:   uint64(i),
+			}
+			s.log = append(s.log, entry)
+		}
+	}
+}
+
+func simulateNetworkPartition(s *Server) {
+	if s.ServerId == 1 || s.ServerId == 5 {
+		select {
+		case <-time.After(time.Second * 30):
+			fmt.Printf("\nbeginning to simulate network partition. Won't respond to heartbeats for a while\n")
+			fchecker.SimulateNetworkPartition = true
+		}
+	}
 }
