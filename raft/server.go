@@ -297,7 +297,7 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	joinComplete = make(chan bool)
 
 	// all server sync
-	s.commitIndexUpdated = make(chan bool)
+	s.commitIndexUpdated = make(chan bool, 2)
 	s.rpcGotTermGreaterThanCurrentTerm = make(chan uint32)
 
 	// follower sync
@@ -673,7 +673,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			return
 		case clientCommand := <-s.commandFromClient:
 			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
-			go s.leaderHandleCommand(clientCommand)
+			s.leaderHandleCommand(clientCommand)
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
 		case <-s.existsInterestingN:
@@ -715,8 +715,8 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand) {
 	go s.countReplies(currPeers, peerReplies, majorityReplied)
 
 	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", *appendEntryArg)
-	for i, peer := range s.Peers {
-		if uint8(i+1) == s.ServerId {
+	for _, peer := range s.Peers {
+		if peer.ServerId == s.ServerId {
 			continue
 		}
 		go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
