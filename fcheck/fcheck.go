@@ -127,8 +127,8 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
 					fmt.Println("WARNING: Failed to decode HBeat packet received from server: ", decodeErr.Error())
 				} else {
 					if receivedHeartBeat.SeqNum%45 == 0 {
-						fmt.Println("Received heartbeat: ", receivedHeartBeat)
-						fmt.Println("sending ack to", remote.String())
+						// fmt.Println("Received heartbeat: ", receivedHeartBeat)
+						// fmt.Println("sending ack to", remote.String())
 					}
 					select {
 					case <-time.After(time.Millisecond * 300):

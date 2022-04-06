@@ -141,8 +141,10 @@ type Server struct {
 	// Persistent state
 	currentTerm uint32 // Might actually be unused
 	votedFor    uint8
+	logMu       sync.RWMutex //protects following
 	log         []Entry
 	kv          map[string]string
+
 	// Volatile state
 	commitIndex uint64
 	lastApplied uint64
@@ -656,12 +658,14 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		of matchIndex[i] ≥ N, and log[N].term == currentTerm:
 		set commitIndex = N (§5.3, §5.4)
 	*/
-
+	stopHeartBeats := make(chan bool)
+	go s.sendHeartBeats(stopHeartBeats)
 	// var err error
 	for {
 		select {
 		case canRunLeader := <-s.runLeader:
 			if !canRunLeader {
+				stopHeartBeats <- true
 				return
 			}
 		case <-s.commitIndexUpdated:
@@ -683,12 +687,46 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
+func (s *Server) sendHeartBeats(stopHeartBeats chan bool) {
+	ticker := time.NewTicker(10 * time.Second)
+
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				prevLogEntry := s.log[len(s.log)-1]
+				appendEntryArg := &AppendEntriesArg{
+					Term:         s.currentTerm,
+					LeaderId:     s.ServerId,
+					PrevLogIndex: prevLogEntry.Index,
+					PrevLogTerm:  prevLogEntry.Term,
+					Entries:      nil,
+					LeaderCommit: s.commitIndex}
+				for _, peer := range s.Peers {
+					if peer.ServerId == s.ServerId {
+						continue
+					}
+					peerReplies := make(chan bool, len(s.Peers)-1)
+					go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
+				}
+
+			case <-stopHeartBeats:
+				fmt.Println("(Leader heartbeats) Received stop heart beats; stopping...")
+				return
+			}
+		}
+	}()
+}
+
 func (s *Server) doCommit(errorChan chan<- error) {
+	s.L.Lock()
+	defer s.L.Unlock()
 	for s.commitIndex > s.lastApplied {
 		s.lastApplied++
-		_, err := s.applyEntry(s.log[s.commitIndex])
+		_, err := s.applyEntry(s.log[s.lastApplied])
 		if err != nil {
 			errorChan <- err
+			fmt.Printf("error %v\n", err)
 		}
 	}
 }
@@ -782,22 +820,19 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 }
 
 func (s *Server) applyEntry(entry Entry) (Command, error) {
+
 	switch entry.Command.Kind {
 	case Put:
 		// TODO lock this and return result of put
-		s.L.Lock()
 		s.kv[entry.Command.Key] = entry.Command.Val
 		newVal := s.kv[entry.Command.Key]
 		fmt.Printf("(KV STATE): %v\n", s.kv)
-		s.L.Unlock()
 		fmt.Printf("(KV STATE): Applied Entry, Key: %s, Val: %s\n", entry.Command.Key, newVal)
 		return Command{Kind: Get, Key: entry.Command.Key, Val: entry.Command.Val}, nil
 	case Get:
 		// TODO return result of get
 		command := Command{Kind: Get, Key: entry.Command.Key}
-		s.L.Lock()
 		command.Val = s.kv[entry.Command.Key]
-		s.L.Unlock()
 		return command, nil
 	default:
 		return Command{}, fmt.Errorf("unable to apply entry %v", entry)
@@ -808,6 +843,9 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
 	// FIXME maybe instead of doing this, we can just look at s.isLeader
 	<-s.appendEntriesCanRespond
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
+	fmt.Printf("(Follower AppendEntries) Received AppendEntry=%v\n", arg)
 
 	// Ensure that the arg entries are in ASC order according to index
 	sort.Slice(arg.Entries, func(i, j int) bool {
