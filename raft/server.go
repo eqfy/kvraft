@@ -126,14 +126,15 @@ type Addr struct {
 
 type Server struct {
 	// Server state may go here
-	ServerId    uint8
-	Peers       []ServerInfo
-	ClusterSize uint8 /* original cluster size*/
-	Majority    uint8
-	Config      Addr
-	trace       *tracing.Trace
-	tracer      *tracing.Tracer
-	fcheckAddr  string
+	ServerId         uint8
+	Peers            []ServerInfo
+	ClusterSize      uint8 /* original cluster size*/
+	Majority         uint8
+	Config           Addr
+	trace            *tracing.Trace
+	tracer           *tracing.Tracer
+	fcheckAddr       string
+	HeartbeatTimeout uint32
 
 	isLeader bool
 
@@ -289,6 +290,7 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	// values
 	s.commitIndex = 0
 	s.lastApplied = 0
+	s.HeartbeatTimeout = 10
 
 	// raft persistent state
 	s.kv = make(map[string]string)
@@ -299,7 +301,7 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	joinComplete = make(chan bool)
 
 	// all server sync
-	s.commitIndexUpdated = make(chan bool, 2)
+	s.commitIndexUpdated = make(chan bool)
 	s.rpcGotTermGreaterThanCurrentTerm = make(chan uint32)
 
 	// follower sync
@@ -658,14 +660,14 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		of matchIndex[i] ≥ N, and log[N].term == currentTerm:
 		set commitIndex = N (§5.3, §5.4)
 	*/
-	stopHeartBeats := make(chan bool)
-	go s.sendHeartBeats(stopHeartBeats)
+	stopHeartbeats := make(chan bool)
+	go s.sendHeartbeats(stopHeartbeats)
 	// var err error
 	for {
 		select {
 		case canRunLeader := <-s.runLeader:
 			if !canRunLeader {
-				stopHeartBeats <- true
+				stopHeartbeats <- true
 				return
 			}
 		case <-s.commitIndexUpdated:
@@ -677,7 +679,7 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			return
 		case clientCommand := <-s.commandFromClient:
 			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
-			s.leaderHandleCommand(clientCommand)
+			go s.leaderHandleCommand(clientCommand)
 		case <-s.followerLogIndexGreaterThanNextIndex:
 			// TODO
 		case <-s.existsInterestingN:
@@ -687,8 +689,8 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 
 }
 
-func (s *Server) sendHeartBeats(stopHeartBeats chan bool) {
-	ticker := time.NewTicker(10 * time.Second)
+func (s *Server) sendHeartbeats(stopHeartbeats chan bool) {
+	ticker := time.NewTicker(time.Duration(s.HeartbeatTimeout) * time.Second)
 
 	go func() {
 		for {
@@ -710,7 +712,7 @@ func (s *Server) sendHeartBeats(stopHeartBeats chan bool) {
 					go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
 				}
 
-			case <-stopHeartBeats:
+			case <-stopHeartbeats:
 				fmt.Println("(Leader heartbeats) Received stop heart beats; stopping...")
 				return
 			}
@@ -804,7 +806,7 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 		case call := <-done:
 			if call.Error == nil {
 				res := call.Reply.(*AppendEntriesReply)
-				fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
+				// fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
 					/* To-Do: force copy logs*/
 				} else {
@@ -845,7 +847,12 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	<-s.appendEntriesCanRespond
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
-	fmt.Printf("(Follower AppendEntries) Received AppendEntry=%v\n", arg)
+
+	if arg.Entries != nil {
+		fmt.Printf("(Follower AppendEntries) Received AppendEntry=%v\n", arg)
+	} else {
+		util.PrintfGreen("(Follower AppendEntries) Received Heartbeat=%v\n", arg)
+	}
 
 	// Ensure that the arg entries are in ASC order according to index
 	sort.Slice(arg.Entries, func(i, j int) bool {
@@ -864,7 +871,6 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 		reply.Success = false
 		return nil
 	}
-
 	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
 	if int(arg.PrevLogIndex) >= len(s.log) {
 		// FIXME might not be correct handling of this case
@@ -872,6 +878,7 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 		fmt.Printf("(Follower AppendEntries) error: saw an out of bounds prevLogIndex %v", arg.PrevLogIndex)
 		return nil
 	}
+
 	if s.log[arg.PrevLogIndex].Term != arg.PrevLogTerm {
 		reply.Success = false
 		return nil
@@ -899,6 +906,9 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	// 4. Append any new entries not already in the log
 	s.log = append(s.log, arg.Entries[appendStartIndex:]...)
 
+	if arg.Entries != nil {
+		PrintLog(s.log)
+	}
 	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
 	if arg.LeaderCommit > s.commitIndex {
 		if arg.LeaderCommit < s.log[len(s.log)-1].Index {
@@ -912,4 +922,22 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	reply.Term = arg.Term
 	s.appendEntriesDone <- true
 	return nil
+}
+
+func (e Command) String() string {
+	switch e.Kind {
+	case Get:
+		return fmt.Sprintf("Get(%s)", e.Key)
+	case Put:
+		return fmt.Sprintf("Put(%s,%s)", e.Key, e.Val)
+	default:
+		return fmt.Sprintf("Unrecognized command")
+	}
+}
+
+func PrintLog(log []Entry) {
+	for i, entry := range log {
+		s := fmt.Sprintf("%d. Term=%d, Index=%d, Entry=%s\n", i, entry.Term, entry.Index, entry.Command)
+		util.PrintfBlue(s)
+	}
 }
