@@ -62,6 +62,12 @@ func main() {
 		if err != nil {
 			util.PrintfRed("Test 1 Put Error: %v \n", err)
 		}
+		if args.Key != reply.Key {
+			util.PrintfRed("Test 1 Put Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+		}
+		if args.Value != reply.Value {
+			util.PrintfRed("Test 1 Put Error: Expected Value %s , Actual Value", args.Value, reply.Value)
+		}
 	}
 
 	// Test 1 Get: Get Key=1 to 10, verify values
@@ -79,7 +85,7 @@ func main() {
 		}
 		expectedVal := strconv.Itoa(i) + "0"
 		if reply.Value != expectedVal {
-			util.PrintfRed("Test 1 Get: Expected value is %s, actual value is %s\n", expectedVal, reply.Value)
+			util.PrintfRed("Test 1 Get Error: Expected value is %s, actual value is %s\n", expectedVal, reply.Value)
 		}
 	}
 
