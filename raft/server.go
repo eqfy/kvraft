@@ -1,11 +1,8 @@
 package raft
 
 import (
-	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
-	"cs.ubc.ca/cpsc416/kvraft/util"
 	"errors"
 	"fmt"
-	"github.com/DistributedClocks/tracing"
 	"math"
 	"net"
 	"net/rpc"
@@ -13,6 +10,10 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
+	"cs.ubc.ca/cpsc416/kvraft/util"
+	"github.com/DistributedClocks/tracing"
 )
 
 // Tracing
