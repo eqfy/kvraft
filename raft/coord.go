@@ -1,18 +1,17 @@
 package raft
 
 import (
+	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
 	"cs.ubc.ca/cpsc416/kvraft/kvslib"
 	"errors"
 	"fmt"
+	"github.com/DistributedClocks/tracing"
+	"math"
 	"net"
 	"net/rpc"
 	"os"
 	"sort"
-	"strconv"
 	"sync"
-
-	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
-	"github.com/DistributedClocks/tracing"
 )
 
 // Actions to be recorded by coord (as part of ctrace, ktrace, and strace):
@@ -45,15 +44,6 @@ type HeadRes struct {
 	ServerId uint8
 }
 
-type TailReqRecvd struct {
-	ClientId string
-}
-
-type TailRes struct {
-	ClientId string
-	ServerId uint8
-}
-
 type ServerJoiningRecvd struct {
 	ServerId uint8
 }
@@ -73,15 +63,10 @@ type CoordConfig struct {
 }
 
 type Coord struct {
-	// Coord state may go here
-	NumServers uint8
-	// added for debugging purposes
-	HeadServer ServerInfo
-	// added for debugging purposes
-	TailServer               ServerInfo
+	NumServers               uint8
 	queuedServerJoinRequests []ServerInfo
 	numJoinRequests          uint8
-	ServerClusterView        []ServerInfo
+	ServerClusterView        map[uint8]ServerInfo
 	BeginQueuedJoinReq       bool
 	Trace                    *tracing.Trace
 	Tracer                   *tracing.Tracer
@@ -111,37 +96,12 @@ type JoinResponse struct {
 	Term     uint32
 }
 
-type HeadTailServerRequest struct {
-	ClientId string
-	Type     string
-	Token    tracing.TracingToken
-}
-
-type HeadTailServerReply struct {
-	HeadServerAddress string
-	TailServerAddress string
-	ServerId          uint8
-	Token             tracing.TracingToken
-}
-
 type ClientLearnServers struct {
 	coord *Coord
 }
 
 type JoinRecvd struct {
 	Token tracing.TracingToken
-}
-
-type NotifyServerFailure struct {
-	FailedServerId []uint8
-	NextServer     ServerInfo
-	PrevServer     ServerInfo
-	Token          tracing.TracingToken
-}
-
-type NotifyServerFailureAck struct {
-	ServerId uint8
-	Token    tracing.TracingToken
 }
 
 // ServerLogState Coord retrieves this info from each
@@ -197,10 +157,7 @@ func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg
 			break
 		}
 	}
-	// fmt.Println("Inside GetLeaderNode: LeaderAddr: ", c.coord.Leader.CoordListenAddr)
-	// if !joinCompleted || c.coord.Leader.ServerId == 0 {
-	//	return errors.New("leader is currently unavailable")
-	//}
+
 	ktracer := c.coord.Tracer.ReceiveToken(request.Token)
 	ktracer.RecordAction(HeadReqRecvd{ClientId: request.ClientId})
 
@@ -211,35 +168,6 @@ func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg
 		ServerId:     serverId,
 		ServerIpPort: c.coord.Leader.ClientListenAddr,
 		Token:        ktracer.GenerateToken(),
-	}
-	return nil
-}
-
-func (c *ClientLearnServers) GetHeadTailServer(request HeadTailServerRequest, reply *HeadTailServerReply) error {
-	fmt.Println("Recevied headTailRequest from client")
-	if !joinCompleted {
-		return errors.New("waiting for server join process to finish")
-	}
-	if request.Type == "head" {
-		ktracer := c.coord.Tracer.ReceiveToken(request.Token)
-		ktracer.RecordAction(HeadReqRecvd{ClientId: request.ClientId})
-		serverId := c.coord.ServerClusterView[0].ServerId
-
-		ktracer.RecordAction(HeadRes{ClientId: request.ClientId, ServerId: serverId})
-		*reply = HeadTailServerReply{HeadServerAddress: c.coord.ServerClusterView[0].ClientListenAddr,
-			TailServerAddress: "", ServerId: serverId, Token: ktracer.GenerateToken()}
-	} else if request.Type == "tail" {
-		ktracer := c.coord.Tracer.ReceiveToken(request.Token)
-		ktracer.RecordAction(TailReqRecvd{ClientId: request.ClientId})
-		tailServerIdx := len(c.coord.ServerClusterView) - 1
-		serverId := c.coord.ServerClusterView[tailServerIdx].ServerId
-
-		ktracer.RecordAction(TailRes{ClientId: request.ClientId, ServerId: serverId})
-		*reply = HeadTailServerReply{HeadServerAddress: "",
-			TailServerAddress: c.coord.ServerClusterView[tailServerIdx].ClientListenAddr, ServerId: serverId, Token: ktracer.GenerateToken()}
-
-	} else {
-		return errors.New("could not recognize request type: " + request.Type + ". request type has to be head or tail")
 	}
 	return nil
 }
@@ -326,15 +254,8 @@ func startListeningForClient(clientAPIListenAddr string, c *ClientLearnServers) 
 	return nil
 }
 
-func (c *Coord) GetClientListenAddr(request string, reply *bool) error {
-	c.ClientContactAddr = request
-	fmt.Println("contact addr for client: ", c.ClientContactAddr)
-	return nil
-}
-
-func joinProtocolNotifyServer(c *Coord, i int, joinResponse JoinResponse) {
-	v := c.ServerClusterView[i]
-	client, err := rpc.Dial("tcp", v.CoordListenAddr)
+func joinProtocolNotifyServer(c *Coord, server ServerInfo, joinResponse JoinResponse) {
+	client, err := rpc.Dial("tcp", server.CoordListenAddr)
 	if err != nil {
 		fmt.Println("(MAIN) Could not contact server during join process. exiting")
 		os.Exit(1)
@@ -362,8 +283,9 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	// configuring initial state of coord
 	c.NumServers = numServers
 	c.queuedServerJoinRequests = make([]ServerInfo, 0)
-	c.ServerClusterView = make([]ServerInfo, 0)
+	c.ServerClusterView = make(map[uint8]ServerInfo)
 	c.Tracer = ctracer
+	c.TermNumber = 1
 
 	if err := startListeningForServers(serverAPIListenAddr, c); err != nil {
 		return err
@@ -383,27 +305,28 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 			})
 			fmt.Printf("Queued requests: %v\n", c.queuedServerJoinRequests)
 
-			c.ServerClusterView = c.queuedServerJoinRequests
-			c.Leader = c.ServerClusterView[0]
+			c.Leader = c.queuedServerJoinRequests[0]
 
-			for i := 1; i < len(c.ServerClusterView); i++ {
-				v := c.ServerClusterView[i]
+			for i := 1; i < len(c.queuedServerJoinRequests); i++ {
+				v := c.queuedServerJoinRequests[i]
 				followerJoinResponse := JoinResponse{
 					ServerId: v.ServerId,
 					Leader:   false,
-					Peers:    c.ServerClusterView,
-					Term:     1,
+					Peers:    c.queuedServerJoinRequests,
+					Term:     uint32(c.TermNumber),
 				}
-				joinProtocolNotifyServer(c, i, followerJoinResponse)
+				joinProtocolNotifyServer(c, v, followerJoinResponse)
+				c.ServerClusterView[v.ServerId] = v
 			}
 
 			leaderJoinResponse := JoinResponse{
 				ServerId: c.Leader.ServerId,
 				Leader:   true,
-				Peers:    c.ServerClusterView,
-				Term:     1,
+				Peers:    c.queuedServerJoinRequests,
+				Term:     uint32(c.TermNumber),
 			}
-			joinProtocolNotifyServer(c, 0, leaderJoinResponse)
+			joinProtocolNotifyServer(c, c.Leader, leaderJoinResponse)
+			c.ServerClusterView[c.Leader.ServerId] = c.Leader
 			joinCompleted = true
 			break
 		}
@@ -413,7 +336,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	if joinCompleted {
 		c.Trace.RecordAction(AllServersJoined{})
 		fmt.Printf("Join process completed; Leader is %v\n", c.Leader)
-		fmt.Printf("serverClusterView: %v\n", c.ServerClusterView)
+		printServerClusterView(c)
 	}
 
 	// server addresses at which fcheck is listening for heartbeats
@@ -421,6 +344,73 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	// coord addresses at which fcheck is running
 	localFcheckAddrMap := make(map[uint8]string)
 
+	setFcheckAddresses(c, fcheckAddrMap, localFcheckAddrMap, serverAPIListenAddr)
+
+	fcheckNotifyCh, fcheckNotifyCh2, err := fchecker.StartMonitoringServers(fchecker.StartMonitoringConfig{
+		RemoteServerAddr: fcheckAddrMap,
+		LocalAddr:        localFcheckAddrMap,
+		LostMsgThresh:    lostMsgsThresh,
+	})
+	if err != nil {
+		fmt.Printf("Fchecker failed to start in coord: %v\n", err.Error())
+		os.Exit(2)
+	}
+
+	serverFailures := make(map[uint8]bool)
+	for {
+		select {
+		case notify := <-fcheckNotifyCh:
+			// Begin Server Failure protocol
+			fmt.Printf("server failure detected: %v\n", notify)
+			failedServer := notify.ServerId
+
+			if _, ok := serverFailures[failedServer]; ok {
+				fmt.Println("Already marked this server as failed")
+				break
+			} else {
+				serverFailures[failedServer] = true
+			}
+
+			if err := verifyQuorum(c, serverFailures); err != nil {
+				os.Exit(2)
+			}
+
+			c.Trace.RecordAction(ServerFail{ServerId: failedServer})
+
+			if c.Leader.ServerId == failedServer {
+				if err := beginLeaderSelection(c, failedServer, serverFailures); err != nil {
+					fmt.Printf("FATAL could not successfully complete the leader selection protocol: %v\nExiting", err.Error())
+					os.Exit(2)
+				}
+				printServerClusterView(c)
+				fmt.Printf("New leader: %v\n", c.Leader.ServerId)
+			} else {
+				delete(c.ServerClusterView, failedServer)
+				printServerClusterView(c)
+			}
+		case serverId := <-fcheckNotifyCh2:
+			fmt.Printf("\nServer %v that was initially unreachable is now responding!!\n", serverId)
+			serverInfo := ServerInfo{}
+			for _, v := range c.queuedServerJoinRequests {
+				if v.ServerId == serverId {
+					serverInfo = v
+					break
+				}
+			}
+			if serverInfo.ServerId == 0 {
+				fmt.Printf("\n WARNING: unable to retrieve information for server %v which is now responsive!\n", serverId)
+			} else {
+				c.ServerClusterView[serverId] = serverInfo
+				delete(serverFailures, serverId)
+				printServerClusterView(c)
+			}
+		default:
+			// do nothing
+		}
+	}
+}
+
+func setFcheckAddresses(c *Coord, fcheckAddrMap map[uint8]string, localFcheckAddrMap map[uint8]string, serverAPIListenAddr string) {
 	for _, server := range c.ServerClusterView {
 		client, err := rpc.Dial("tcp", server.CoordListenAddr)
 		if err != nil {
@@ -449,521 +439,153 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	}
 	fmt.Println("remote fchecker addresses: ", fcheckAddrMap)
 	fmt.Println("local fchecker addresses: ", localFcheckAddrMap)
+}
 
-	fcheckNotifyCh, err := fchecker.StartMonitoringServers(fchecker.StartMonitoringConfig{
-		RemoteServerAddr: fcheckAddrMap,
-		LocalAddr:        localFcheckAddrMap,
-		LostMsgThresh:    lostMsgsThresh,
-	})
-	if err != nil {
-		fmt.Printf("Fchecker failed to start in coord: %v\n", err.Error())
-		os.Exit(2)
-	}
+func verifyQuorum(c *Coord, failedServersMap map[uint8]bool) error {
+	quorum := int(math.Floor(float64(c.NumServers/2))) + 1
+	if len(failedServersMap) >= quorum {
+		fmt.Println("FATAL: QUORUM OF SERVERS UNAVAILABLE. SHUTTING DOWN.")
 
-	concurrentServerFailures := make(map[uint8]bool)
-	for {
-		select {
-		case notify := <-fcheckNotifyCh:
-			// Begin Server Failure protocol
-			fmt.Printf("server failure detected: %v\n", notify)
-			failedServer := notify.ServerId
-
-			if _, ok := concurrentServerFailures[failedServer]; ok {
-				fmt.Println("Already marked this server as failed possibly because of concurrent failures")
-				delete(concurrentServerFailures, failedServer)
-				break
-			}
-
-			c.Trace.RecordAction(ServerFail{ServerId: failedServer})
-			if c.HeadServer.ServerId == failedServer {
-				errStr := ""
-				retry := resolveHeadServerFailures(c, &errStr, concurrentServerFailures)
-				for {
-					if retry {
-						fmt.Println("retrying to resolve HeadServerFailures...")
-						errStr = ""
-						retry = resolveHeadServerFailures(c, &errStr, concurrentServerFailures)
-					} else {
-						break
-					}
-				}
-				if errStr != "" {
-					fmt.Printf("Could not complete serverFailure Protocol: %v\nExiting", errStr)
-					os.Exit(1)
-				}
-				// Chain should be properly updated now
-
-			} else if c.TailServer.ServerId == failedServer {
-				errStr := ""
-				retry := resolveTailServerFailures(c, &errStr, failedServer, concurrentServerFailures)
-				for {
-					if retry {
-						fmt.Println("retrying to resolve TailerverFailures...")
-						errStr = ""
-						retry = resolveTailServerFailures(c, &errStr, failedServer, concurrentServerFailures)
-					} else {
-						break
-					}
-				}
-				if errStr != "" {
-					fmt.Printf("Could not complete serverFailure Protocol: %v\nExiting", errStr)
-					os.Exit(1)
-				}
-				// Chain should be properly updated now
+		for _, server := range c.ServerClusterView {
+			if client, err := rpc.Dial("tcp", server.CoordListenAddr); err != nil {
+				continue
 			} else {
-				// Dealing with intermediate server failures
-				errStr := ""
-				retry := resolveintermediateServerFailures(c, &errStr, failedServer, concurrentServerFailures)
-
-				for {
-					if retry {
-						fmt.Println("retrying to resolve intermediate server failures...")
-						errStr = ""
-						retry = resolveintermediateServerFailures(c, &errStr, failedServer, concurrentServerFailures)
-					} else {
-						break
-					}
-				}
-				if errStr != "" {
-					fmt.Println("FATAL error during server failure protocol: ", errStr)
-					fmt.Println("Exiting")
-					os.Exit(1)
-				}
-				// Chain should be properly updated now
+				terminateMsg := TerminateNotification{Token: c.Trace.GenerateToken()}
+				var ack bool
+				_ = client.Call("Server.Terminate", terminateMsg, &ack)
 			}
-		default:
-			// do nothing
 		}
+		return errors.New("terminate")
 	}
+	return nil
 }
 
-func resolveHeadServerFailures(c *Coord, errorStack *string, concurrentServerFailures map[uint8]bool) bool {
-	nextHeadServer, multipleAdjServers := findNewNext(c, errorStack, 0, concurrentServerFailures)
-	if *errorStack != "" {
-		return false
+func findNewLeader(c *Coord, serverFailures map[uint8]bool) (ServerInfo, error) {
+	availableServersLogState := make([]ServerLogState, 0)
+	// get log state from each follower
+	for _, server := range c.ServerClusterView {
+		if server.ServerId != c.Leader.ServerId {
+			client, err := rpc.Dial("tcp", server.CoordListenAddr)
+			if err != nil {
+				fmt.Printf("Could not contact server during server failure protocol: %v\n Marking this server as offline.\n", err.Error())
+				if _, ok := serverFailures[server.ServerId]; !ok {
+					c.Trace.RecordAction(ServerFail{ServerId: server.ServerId})
+				}
+				serverFailures[server.ServerId] = true
+				if err := verifyQuorum(c, serverFailures); err != nil {
+					os.Exit(2)
+				}
+				delete(c.ServerClusterView, server.ServerId)
+				fmt.Println("Trying to get log state of next available server in the cluster.")
+				printServerClusterView(c)
+				continue
+			}
+
+			logStateRequest := ServerLogStateRequest{Token: c.Trace.GenerateToken()}
+			serverLogState := ServerLogState{}
+			err = client.Call("Server.GetLogState", logStateRequest, &serverLogState)
+			if err != nil {
+				fmt.Printf("Error received when waiting for logState from server during failure protocol: %v", err.Error())
+				fmt.Println("Marking this server as offline")
+				if _, ok := serverFailures[server.ServerId]; !ok {
+					c.Trace.RecordAction(ServerFail{ServerId: server.ServerId})
+				}
+				serverFailures[server.ServerId] = true
+				if err := verifyQuorum(c, serverFailures); err != nil {
+					os.Exit(2)
+				}
+				delete(c.ServerClusterView, server.ServerId)
+			} else {
+				availableServersLogState = append(availableServersLogState, serverLogState)
+			}
+		}
 	}
 
-	// Notify newHead server
-	NotifyMsgForNewHeadServer := NotifyServerFailure{
-		FailedServerId: multipleAdjServers,
-		NextServer:     ServerInfo{},
-		PrevServer:     nextHeadServer,
-		Token:          c.Trace.GenerateToken(),
-	}
-	var notifyServerFailureAck NotifyServerFailureAck
-
-	if client, err := rpc.Dial("tcp", nextHeadServer.CoordListenAddr); err != nil {
-		fmt.Printf("Could not dial nextHeadServer:  %v\n Retrying to find available servers\n", err.Error())
-		*errorStack = ""
-		// resolveHeadServerFailures(c, errorStack, concurrentServerFailures)
-		return true
-	} else {
-		err = client.Call("Server.NotifyServerFailure", NotifyMsgForNewHeadServer, &notifyServerFailureAck)
-		if err != nil {
-			*errorStack = ""
-			fmt.Printf("Error received while waiting for ack from server during failure protocol: %v\nRetrying to find available servers", err.Error())
-			// resolveHeadServerFailures(c, errorStack, concurrentServerFailures)
+	// after receiving the log info from all available servers, select the next best leader
+	sort.Slice(availableServersLogState, func(i, j int) bool {
+		if availableServersLogState[i].Term > availableServersLogState[j].Term {
 			return true
 		}
-	}
-
-	serverIdx := -1
-	for i, v := range c.ServerClusterView {
-		if v.ServerId == nextHeadServer.ServerId {
-			serverIdx = i
-			break
+		if availableServersLogState[i].Term < availableServersLogState[j].Term {
+			return false
 		}
-	}
-	c.ServerClusterView = c.ServerClusterView[serverIdx:]
-	fmt.Println("updated serverChainView: ", c.ServerClusterView)
-	c.HeadServer = c.ServerClusterView[0]
-	c.TailServer = c.ServerClusterView[len(c.ServerClusterView)-1]
+		return availableServersLogState[i].LogIdx > availableServersLogState[j].LogIdx
+	})
 
-	// trace serverFailHandledReceived
-	c.Trace = c.Tracer.ReceiveToken(notifyServerFailureAck.Token)
-	for i := 0; i < len(multipleAdjServers); i++ {
-		if i > 0 {
-			c.Trace.RecordAction(ServerFailHandledRecvd{
-				FailedServerId:   multipleAdjServers[i],
-				AdjacentServerId: multipleAdjServers[i-1],
-			})
-		}
-		if i != len(multipleAdjServers)-1 {
-			c.Trace.RecordAction(ServerFailHandledRecvd{
-				FailedServerId:   multipleAdjServers[i],
-				AdjacentServerId: multipleAdjServers[i+1],
-			})
-		}
-	}
-	if multipleAdjServers[len(multipleAdjServers)-1] < c.HeadServer.ServerId {
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   multipleAdjServers[len(multipleAdjServers)-1],
-			AdjacentServerId: c.HeadServer.ServerId,
-		})
+	if len(availableServersLogState) == 0 {
+		return ServerInfo{}, errors.New("could not get log state from any servers")
 	}
 
-	// trace the chain view
-	newChainTrace := NewChain{}
-	newChainTrace.Chain = make([]uint8, len(c.ServerClusterView))
-	for i, v := range c.ServerClusterView {
-		newChainTrace.Chain[i] = v.ServerId
+	newLeaderId := availableServersLogState[0].ServerId
+	newLeader := c.ServerClusterView[newLeaderId]
+	if newLeader.ServerId == 0 {
+		return ServerInfo{}, errors.New("could not find newly selected leader in serverClusterView")
 	}
-	c.Trace.RecordAction(newChainTrace)
 
-	// notify client
-	//if client, err := rpc.Dial("tcp", c.ClientContactAddr); err != nil {
-	//	fmt.Println("Could not dial client to inform about head server failure: ", err.Error())
-	//} else {
-	//	var notifyClientAck bool
-	//	err = client.Call("CoordNotification.NotifyClientForServerFailure", "head", &notifyClientAck)
-	//	if err != nil {
-	//		fmt.Println("Error received while waiting for ack from client during failure protocol: ", err.Error())
-	//	}
-	//}
-
-	return false
+	return newLeader, nil
 }
 
-func resolveTailServerFailures(c *Coord, errorStack *string, failedServerId uint8, concurrentServerFailures map[uint8]bool) bool {
-	failedServerIdx := -1
-	for i, v := range c.ServerClusterView {
-		if v.ServerId == failedServerId {
-			failedServerIdx = i
-			break
-		}
-	}
-	if failedServerIdx == -1 {
-		*errorStack += "could not find server " + strconv.Itoa(int(failedServerId)) + " in serverChainView"
-		return false
-	}
-
-	nextTailServer, multipleAdjFailures := findNewPrev(c, errorStack, failedServerIdx, concurrentServerFailures)
-	if *errorStack != "" {
-		return false
-	}
-
-	// Notify newTail server
-	NotifyMsgForNewTailServer := NotifyServerFailure{
-		FailedServerId: multipleAdjFailures,
-		NextServer:     nextTailServer,
-		PrevServer:     ServerInfo{},
-		Token:          c.Trace.GenerateToken(),
-	}
-	var notifyServerFailureAck NotifyServerFailureAck
-
-	if client, err := rpc.Dial("tcp", nextTailServer.CoordListenAddr); err != nil {
-		fmt.Printf("Could not dial nextTailServer:  %v\n Retrying to find available servers\n", err.Error())
-		*errorStack = ""
-		// resolveHeadServerFailures(c, errorStack, concurrentServerFailures)
-		return true
-	} else {
-		err = client.Call("Server.NotifyServerFailure", NotifyMsgForNewTailServer, &notifyServerFailureAck)
+func beginLeaderSelection(c *Coord, failedLeaderId uint8, serverFailures map[uint8]bool) error {
+	delete(c.ServerClusterView, failedLeaderId)
+	c.TermNumber = c.TermNumber + 1
+	for len(c.ServerClusterView) > 0 {
+		newLeader, err := findNewLeader(c, serverFailures)
 		if err != nil {
-			*errorStack = ""
-			fmt.Printf("Error received while waiting for ack from server during failure protocol: %v\nRetrying to find available servers", err.Error())
-			// resolveHeadServerFailures(c, errorStack, concurrentServerFailures)
-			return true
+			return err
 		}
-	}
-
-	serverIdx := -1
-	for i, v := range c.ServerClusterView {
-		if v.ServerId == nextTailServer.ServerId {
-			serverIdx = i
-			break
-		}
-	}
-	c.ServerClusterView = c.ServerClusterView[:serverIdx+1]
-	fmt.Println("updated serverChainView: ", c.ServerClusterView)
-	c.HeadServer = c.ServerClusterView[0]
-	c.TailServer = c.ServerClusterView[len(c.ServerClusterView)-1]
-
-	// trace the ServerFailHandledReceived
-	c.Trace = c.Tracer.ReceiveToken(notifyServerFailureAck.Token)
-	if multipleAdjFailures[0] > c.TailServer.ServerId {
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   multipleAdjFailures[0],
-			AdjacentServerId: c.TailServer.ServerId,
-		})
-	}
-	for i := 0; i < len(multipleAdjFailures); i++ {
-		if i > 0 {
-			c.Trace.RecordAction(ServerFailHandledRecvd{
-				FailedServerId:   multipleAdjFailures[i],
-				AdjacentServerId: multipleAdjFailures[i-1],
-			})
-		}
-		if i != len(multipleAdjFailures)-1 {
-			c.Trace.RecordAction(ServerFailHandledRecvd{
-				FailedServerId:   multipleAdjFailures[i],
-				AdjacentServerId: multipleAdjFailures[i+1],
-			})
-		}
-	}
-
-	// trace the chain view
-	newChainTrace := NewChain{}
-	newChainTrace.Chain = make([]uint8, len(c.ServerClusterView))
-	for i, v := range c.ServerClusterView {
-		newChainTrace.Chain[i] = v.ServerId
-	}
-	c.Trace.RecordAction(newChainTrace)
-
-	/*if client, err := rpc.Dial("tcp", c.ClientContactAddr); err != nil {
-		fmt.Println("Could not dial client to inform about tail server failure: ", err.Error())
-	} else {
-		var notifyClientAck bool
-		err = client.Call("CoordNotification.NotifyClientForServerFailure", "tail", &notifyClientAck)
+		client, err := rpc.Dial("tcp", newLeader.CoordListenAddr)
 		if err != nil {
-			fmt.Println("Error received while waiting for ack from client during failure protocol: ", err.Error())
+			fmt.Printf("Could not contact new leader during server failure protocol: %v\n Marking this server as offline.\n", err.Error())
+			if _, ok := serverFailures[newLeader.ServerId]; !ok {
+				c.Trace.RecordAction(ServerFail{ServerId: newLeader.ServerId})
+			}
+			serverFailures[newLeader.ServerId] = true
+			if err := verifyQuorum(c, serverFailures); err != nil {
+				os.Exit(2)
+			}
+			delete(c.ServerClusterView, newLeader.ServerId)
+			fmt.Println("Retrying Leader Selection")
+			continue
 		}
-	}*/
-
-	return false
-}
-
-func resolveintermediateServerFailures(c *Coord, errorStack *string, failedServerId uint8, concurrentServerFailures map[uint8]bool) bool {
-	failedServerIdx := -1
-	for i, v := range c.ServerClusterView {
-		if v.ServerId == failedServerId {
-			failedServerIdx = i
-			break
+		peers := make([]ServerInfo, 0)
+		for _, server := range c.ServerClusterView {
+			peers = append(peers, server)
 		}
-	}
-	if failedServerIdx == -1 {
-		*errorStack += "could not find server " + strconv.Itoa(int(failedServerId)) + " in serverChainView"
-		return false
-	}
-
-	leftAdjacentServer, multipleAdjFailuresLeft := findNewPrev(c, errorStack, failedServerIdx, concurrentServerFailures)
-
-	rightAdjacentServer, multipleAdjFailuresRight := findNewNext(c, errorStack, failedServerIdx, concurrentServerFailures)
-
-	if leftAdjacentServer.ServerId == 0 && rightAdjacentServer.ServerId == 0 {
-		*errorStack += "No online servers found in the server chain"
-		return false
-	}
-
-	// allAdjFailures := make([]uint8, 0)
-	allAdjFailures := multipleAdjFailuresLeft[:len(multipleAdjFailuresLeft)]
-	if len(multipleAdjFailuresRight) > 1 {
-		allAdjFailures = append(allAdjFailures, multipleAdjFailuresRight[1:]...)
-	}
-
-	var notifyServerFailureAckLeft NotifyServerFailureAck
-	var notifyServerFailureAckRight NotifyServerFailureAck
-
-	if leftAdjacentServer.ServerId != 0 {
-		// Notify leftAdjacent server
-		NotifyMsgForLeftAdjServer := NotifyServerFailure{
-			FailedServerId: allAdjFailures,
-			NextServer:     rightAdjacentServer,
-			PrevServer:     ServerInfo{},
+		leaderFailOverMsg := LeaderFailOver{
+			ServerId:       newLeader.ServerId,
+			FailedLeaderId: failedLeaderId,
+			Peers:          peers,
+			Term:           c.TermNumber,
 			Token:          c.Trace.GenerateToken(),
 		}
-		if rightAdjacentServer.ServerId == 0 {
-			// no servers are online towards the right, then the left adjacent server has to be the tail
-			NotifyMsgForLeftAdjServer.NextServer = leftAdjacentServer
-		}
-		if client, err := rpc.Dial("tcp", leftAdjacentServer.CoordListenAddr); err != nil {
-			fmt.Printf("Could not dial leftAdjacentServer:  %v\n Retrying to find available servers\n", err.Error())
-			*errorStack = ""
-			// resolveintermediateServerFailures(c, errorStack, failedServerId, concurrentServerFailures)
-			return true
-		} else {
-			err = client.Call("Server.NotifyServerFailure", NotifyMsgForLeftAdjServer, &notifyServerFailureAckLeft)
-			if err != nil {
-				*errorStack = ""
-				fmt.Printf("Error received while waiting for ack from server during failure protocol: %v\nRetrying to find available servers", err.Error())
-				// resolveintermediateServerFailures(c, errorStack, failedServerId, concurrentServerFailures)
-				return true
+		leaderFailOverack := LeaderFailOverAck{}
+		err = client.Call("Server.NotifyFailOverLeader", leaderFailOverMsg, &leaderFailOverack)
+		if err != nil {
+			fmt.Printf("Error received when waiting for leaderFailOverAck:: %v", err.Error())
+			fmt.Println("Marking this server as offline")
+			if _, ok := serverFailures[newLeader.ServerId]; !ok {
+				c.Trace.RecordAction(ServerFail{ServerId: newLeader.ServerId})
 			}
-		}
-	}
-	if rightAdjacentServer.ServerId != 0 {
-		// Notify rightAdjacent server
-		NotifyMsgForRightAdjServer := NotifyServerFailure{
-			FailedServerId: allAdjFailures,
-			NextServer:     ServerInfo{},
-			PrevServer:     leftAdjacentServer,
-			Token:          c.Trace.GenerateToken(),
-		}
-		if leftAdjacentServer.ServerId == 0 {
-			NotifyMsgForRightAdjServer.PrevServer = rightAdjacentServer
-		}
-		if client, err := rpc.Dial("tcp", rightAdjacentServer.CoordListenAddr); err != nil {
-			fmt.Printf("Could not dial rightAdjacentServer:  %v\n Retrying to find available servers\n", err.Error())
-			*errorStack = ""
-			// resolveintermediateServerFailures(c, errorStack, failedServerId, concurrentServerFailures)
-			return true
-		} else {
-			err = client.Call("Server.NotifyServerFailure", NotifyMsgForRightAdjServer, &notifyServerFailureAckRight)
-			if err != nil {
-				*errorStack = ""
-				fmt.Printf("Error received while waiting for ack from server during failure protocol: %v\nRetrying to find available servers", err.Error())
-				// resolveintermediateServerFailures(c, errorStack, failedServerId, concurrentServerFailures)
-				return true
+			serverFailures[newLeader.ServerId] = true
+			if err := verifyQuorum(c, serverFailures); err != nil {
+				os.Exit(2)
 			}
-			c.Trace = c.Tracer.ReceiveToken(notifyServerFailureAckRight.Token)
-		}
-	}
-
-	// received ack from both servers; update serverChainView
-	lidx := -1
-	ridx := -1
-	for i, v := range c.ServerClusterView {
-		if v.ServerId == leftAdjacentServer.ServerId {
-			lidx = i
-			break
-		}
-	}
-	for i, v := range c.ServerClusterView {
-		if v.ServerId == rightAdjacentServer.ServerId {
-			ridx = i
-			break
-		}
-	}
-	if leftAdjacentServer.ServerId != 0 && rightAdjacentServer.ServerId != 0 {
-		c.ServerClusterView = append(c.ServerClusterView[:lidx+1], c.ServerClusterView[ridx:]...)
-	} else if leftAdjacentServer.ServerId == 0 {
-		c.ServerClusterView = c.ServerClusterView[ridx:]
-	} else {
-		c.ServerClusterView = c.ServerClusterView[:lidx+1]
-	}
-	fmt.Println("updated serverChainView: ", c.ServerClusterView)
-	c.HeadServer = c.ServerClusterView[0]
-	c.TailServer = c.ServerClusterView[len(c.ServerClusterView)-1]
-
-	// trace the ServerFailHandledReceived
-	for i := 0; i < len(allAdjFailures); i++ {
-		if i > 0 {
-			c.Trace.RecordAction(ServerFailHandledRecvd{
-				FailedServerId:   allAdjFailures[i],
-				AdjacentServerId: allAdjFailures[i-1],
-			})
-		}
-		if i != len(allAdjFailures)-1 {
-			c.Trace.RecordAction(ServerFailHandledRecvd{
-				FailedServerId:   allAdjFailures[i],
-				AdjacentServerId: allAdjFailures[i+1],
-			})
-		}
-	}
-
-	if allAdjFailures[0] > c.TailServer.ServerId {
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   allAdjFailures[0],
-			AdjacentServerId: c.TailServer.ServerId,
-		})
-	} else if allAdjFailures[len(allAdjFailures)-1] < c.HeadServer.ServerId {
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   allAdjFailures[len(allAdjFailures)-1],
-			AdjacentServerId: c.HeadServer.ServerId,
-		})
-	} else if len(allAdjFailures) == 1 {
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   failedServerId,
-			AdjacentServerId: leftAdjacentServer.ServerId,
-		})
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   failedServerId,
-			AdjacentServerId: rightAdjacentServer.ServerId,
-		})
-	} else if len(allAdjFailures) > 1 {
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   allAdjFailures[0],
-			AdjacentServerId: leftAdjacentServer.ServerId,
-		})
-		c.Trace.RecordAction(ServerFailHandledRecvd{
-			FailedServerId:   allAdjFailures[len(allAdjFailures)-1],
-			AdjacentServerId: rightAdjacentServer.ServerId,
-		})
-	}
-
-	// trace the chain view
-	newChainTrace := NewChain{}
-	newChainTrace.Chain = make([]uint8, len(c.ServerClusterView))
-	for i, v := range c.ServerClusterView {
-		newChainTrace.Chain[i] = v.ServerId
-	}
-	c.Trace.RecordAction(newChainTrace)
-
-	*errorStack = ""
-	return false
-}
-
-func findNewPrev(c *Coord, errorStack *string, failedServerIdx int, concurrentServerFailures map[uint8]bool) (ServerInfo, []uint8) {
-	availableServer := ServerInfo{}
-	multipleAdjFailures := make(map[uint8]bool)
-	multipleAdjFailures[c.ServerClusterView[failedServerIdx].ServerId] = true
-
-	for i := failedServerIdx - 1; i >= 0; i-- {
-		serverToContact := c.ServerClusterView[i]
-
-		if _, err := rpc.Dial("tcp", serverToContact.CoordListenAddr); err != nil {
-			fmt.Printf("Could not contact server during server failure protocol: %v\n Marking this server as offline.\n", err.Error())
-			if _, ok := concurrentServerFailures[serverToContact.ServerId]; !ok {
-				c.Trace.RecordAction(ServerFail{ServerId: serverToContact.ServerId})
-				multipleAdjFailures[serverToContact.ServerId] = true
-			}
-			concurrentServerFailures[serverToContact.ServerId] = true
-			fmt.Println("Trying to look for next available server in the chain: ", c.ServerClusterView)
+			delete(c.ServerClusterView, newLeader.ServerId)
+			fmt.Println("Retrying Leader Selection")
 			continue
 		} else {
-			// server seems to be online. Send failure notification
-			availableServer = serverToContact
-			break
+			// TODO Handle tracing
+			c.Leader = newLeader
+			return nil
 		}
 	}
-
-	if availableServer.ServerId == 0 {
-		*errorStack += "could not find any online server to the left of server " + strconv.Itoa(int(c.ServerClusterView[failedServerIdx].ServerId))
-	}
-
-	keys := make([]uint8, len(multipleAdjFailures))
-	i := 0
-	for k := range multipleAdjFailures {
-		keys[i] = k
-		i++
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-
-	return availableServer, keys
+	return errors.New("leader selection failed")
 }
 
-func findNewNext(c *Coord, errorStack *string, failedServerIdx int, concurrentServerFailures map[uint8]bool) (ServerInfo, []uint8) {
-	availableServer := ServerInfo{}
-	multipleAdjFailures := make(map[uint8]bool)
-	multipleAdjFailures[c.ServerClusterView[failedServerIdx].ServerId] = true
-
-	for i := failedServerIdx + 1; i < len(c.ServerClusterView); i++ {
-		serverToContact := c.ServerClusterView[i]
-
-		if _, err := rpc.Dial("tcp", serverToContact.CoordListenAddr); err != nil {
-			fmt.Printf("Could not contact server during server failure protocol: %v\n Marking this server as offline.\n", err.Error())
-			if _, ok := concurrentServerFailures[serverToContact.ServerId]; !ok {
-				c.Trace.RecordAction(ServerFail{ServerId: serverToContact.ServerId})
-				multipleAdjFailures[serverToContact.ServerId] = true
-			}
-			concurrentServerFailures[serverToContact.ServerId] = true
-			fmt.Println("Trying to look for next available server in the chain: ", c.ServerClusterView)
-			continue
-		} else {
-			// server seems to be online. Send failure notification
-			availableServer = serverToContact
-			break
-		}
+func printServerClusterView(c *Coord) {
+	fmt.Printf("ServerClusterView: ")
+	for _, v := range c.ServerClusterView {
+		fmt.Printf("%v, ", v.ServerId)
 	}
-	if availableServer.ServerId == 0 {
-		*errorStack += "could not find any online server to the right of server " + strconv.Itoa(int(c.ServerClusterView[failedServerIdx].ServerId))
-	}
-
-	keys := make([]uint8, len(multipleAdjFailures))
-	i := 0
-	for k := range multipleAdjFailures {
-		keys[i] = k
-		i++
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	return availableServer, keys
+	fmt.Println()
 }

@@ -275,6 +275,12 @@ func (s *Server) Start(serverId uint8, coordAddr string, serverAddr string, serv
 
 	/* Join complete, ready to take client requests*/
 	go s.runRaft()
+
+	// try to mock a network partition by
+	// having a subset of nodes not respond
+	// to coord's heartbeats
+	// simulateNetworkPartition(s)
+
 	listenForClient(s)
 
 	return nil
@@ -474,21 +480,20 @@ func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
 	return nil
 }
 
-// NotifyServerFailure Needs to be deleted. Just keeping it for now to avoid coord refactoring
-// will remove it soon
-func (s *Server) NotifyServerFailure(notification NotifyServerFailure, reply *NotifyServerFailureAck) error {
-	fmt.Println("Received server failure notification for server with id: ", notification.FailedServerId)
-	// trace action
-	cTrace := s.tracer.ReceiveToken(notification.Token)
-	for _, servId := range notification.FailedServerId {
-		cTrace.RecordAction(ServerFailRecvd{FailedServerId: servId})
-	}
-	return nil
-}
-
 // NotifyFailOverLeader TEMPLATE Server learns it's the new leader when coord calls this
-func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *NotifyServerFailureAck) error {
+func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *LeaderFailOverAck) error {
 	fmt.Println("Received leader failure notification. I'm the new leader.")
+	if notification.ServerId != s.ServerId {
+		util.PrintlnRed("NotifyFailOverLeader: ServerId mismatch, received Id %d and actual Id is %d ", notification.ServerId, s.ServerId)
+		return errors.New("NotifyFailOverLeader: ServerId mismatch")
+	}
+	cTrace := s.tracer.ReceiveToken(notification.Token)
+	cTrace.RecordAction(ServerFailRecvd{FailedServerId: notification.FailedLeaderId})
+	s.Peers = notification.Peers
+	s.currentTerm = uint32(notification.Term)
+
+	reply.ServerId = s.ServerId
+	reply.Token = cTrace.GenerateToken()
 	return nil
 }
 
@@ -506,6 +511,8 @@ func (s *Server) GetLogState(request ServerLogStateRequest, reply *ServerLogStat
 
 // Terminate If coord detects majority failures, system shuts down
 func (s *Server) Terminate(notification TerminateNotification, reply *bool) error {
+	fmt.Println("FATAL Quorum of nodes unavailable. Shutting down")
+	os.Exit(2)
 	return nil
 }
 
@@ -576,6 +583,10 @@ func (s *Server) runRaft() {
 	go s.raftFollower(serverErrorChan)
 	// go s.raftCandidate(serverErrorChan)
 	go s.raftLeader(serverErrorChan)
+
+	// testing leaderSelection by mocking
+	// incosistent logs amongnst nodes
+	// mockLogs(s)
 
 	for {
 		err := <-serverErrorChan
@@ -939,5 +950,49 @@ func PrintLog(log []Entry) {
 	for i, entry := range log {
 		s := fmt.Sprintf("%d. Term=%d, Index=%d, Entry=%s\n", i, entry.Term, entry.Index, entry.Command)
 		util.PrintfBlue(s)
+	}
+}
+
+func mockLogs(s *Server) {
+	if s.ServerId == 1 || s.ServerId == 3 || s.ServerId == 5 {
+		for i := 1; i < 10; i++ {
+			term := 1
+			if i > 5 {
+				term = 2
+			}
+			entry := Entry{
+				Term:    uint32(term),
+				Command: Command{},
+				Index:   uint64(i),
+			}
+			s.log = append(s.log, entry)
+		}
+	}
+	if s.ServerId == 2 || s.ServerId == 4 {
+		for i := 1; i < 13; i++ {
+			term := 1
+			if i > 5 {
+				term = 2
+			}
+			if i > 10 && s.ServerId == 4 {
+				term = 5
+			}
+			entry := Entry{
+				Term:    uint32(term),
+				Command: Command{},
+				Index:   uint64(i),
+			}
+			s.log = append(s.log, entry)
+		}
+	}
+}
+
+func simulateNetworkPartition(s *Server) {
+	if s.ServerId == 1 || s.ServerId == 5 {
+		select {
+		case <-time.After(time.Second * 30):
+			fmt.Printf("\nbeginning to simulate network partition. Won't respond to heartbeats for a while\n")
+			fchecker.SimulateNetworkPartition = true
+		}
 	}
 }
