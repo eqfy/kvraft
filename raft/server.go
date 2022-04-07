@@ -479,6 +479,17 @@ func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
 // NotifyFailOverLeader TEMPLATE Server learns it's the new leader when coord calls this
 func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *LeaderFailOverAck) error {
 	fmt.Println("Received leader failure notification. I'm the new leader.")
+	if notification.ServerId != s.ServerId {
+		util.PrintlnRed("NotifyFailOverLeader: ServerId mismatch, received Id %d and actual Id is %d ", notification.ServerId, s.ServerId)
+		return errors.New("NotifyFailOverLeader: ServerId mismatch")
+	}
+	cTrace := s.tracer.ReceiveToken(notification.Token)
+	cTrace.RecordAction(ServerFailRecvd{FailedServerId: notification.FailedLeaderId})
+	s.Peers = notification.Peers
+	s.currentTerm = uint32(notification.Term)
+
+	reply.ServerId = s.ServerId
+	reply.Token = cTrace.GenerateToken()
 	return nil
 }
 
