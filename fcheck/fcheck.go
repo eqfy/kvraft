@@ -77,6 +77,8 @@ var mu sync.Mutex
 var ackRoutinesList = make([]routineTerminateInfo, 0)
 var ackMu sync.Mutex
 
+var SimulateNetworkPartition = false
+
 // Starts the fcheck library.
 
 func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
@@ -101,6 +103,7 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
 		fmt.Println(ackRoutinesList)
 
 		go func(routineSpecificNonce uint64) {
+			ignoredHeartbeats := 0
 			defer monitorConn.Close()
 			for {
 
@@ -126,15 +129,22 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
 				if decodeErr != nil {
 					fmt.Println("WARNING: Failed to decode HBeat packet received from server: ", decodeErr.Error())
 				} else {
-					if receivedHeartBeat.SeqNum%45 == 0 {
-						fmt.Println("Received heartbeat: ", receivedHeartBeat)
-						fmt.Println("sending ack to", remote.String())
-					}
-					select {
-					case <-time.After(time.Millisecond * 300):
-						ack := AckMessage{receivedHeartBeat.EpochNonce, receivedHeartBeat.SeqNum}
-						if _, err := monitorConn.WriteTo(encodeAck(&ack), remote); err != nil {
-							fmt.Println("WARNING: could not send ack msg to: ", remote.String())
+					if SimulateNetworkPartition {
+						ignoredHeartbeats++
+						if ignoredHeartbeats == 100 {
+							SimulateNetworkPartition = false
+						}
+					} else {
+						if receivedHeartBeat.SeqNum%45 == 0 {
+							fmt.Println("Received heartbeat: ", receivedHeartBeat)
+							fmt.Println("sending ack to", remote.String())
+						}
+						select {
+						case <-time.After(time.Millisecond * 300):
+							ack := AckMessage{receivedHeartBeat.EpochNonce, receivedHeartBeat.SeqNum}
+							if _, err := monitorConn.WriteTo(encodeAck(&ack), remote); err != nil {
+								fmt.Println("WARNING: could not send ack msg to: ", remote.String())
+							}
 						}
 					}
 				}
@@ -294,23 +304,24 @@ func Start(arg StartStruct) (notifyCh <-chan FailureDetected, err error) {
 	return failureChan, nil
 }
 
-func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureDetected, err error) {
+func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureDetected, notifyCh2 <-chan uint8, err error) {
 	failureChan := make(chan FailureDetected)
+	successChan := make(chan uint8)
 
 	for servId, servAddr := range arg.RemoteServerAddr {
 		localAddr, err := net.ResolveUDPAddr("udp", arg.LocalAddr[servId])
 		if err != nil {
-			return nil, errors.New("could not resolve local CoordAddress for fcheck:" + err.Error())
+			return nil, nil, errors.New("could not resolve local CoordAddress for fcheck:" + err.Error())
 		}
 
 		remoteAddr, err := net.ResolveUDPAddr("udp", servAddr)
 		if err != nil {
-			return nil, errors.New("could not resolve UDP address: " + err.Error())
+			return nil, nil, errors.New("could not resolve UDP address: " + err.Error())
 		}
 
 		conn, err := net.DialUDP("udp", localAddr, remoteAddr)
 		if err != nil {
-			return nil, errors.New("could not dial UDP: " + err.Error())
+			return nil, nil, errors.New("could not dial UDP: " + err.Error())
 		}
 
 		go func(conn *net.UDPConn, nonce uint8) {
@@ -318,13 +329,8 @@ func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureD
 
 			fmt.Println("starting go routine with epoch " + strconv.FormatInt(int64(nonce), 10))
 
-			//mu.Lock()
-			//routinesList = append(routinesList, routineTerminateInfo{nonce: arg.EpochNonce, terminate: false})
-			//mu.Unlock()
-			//fmt.Println(routinesList)
-
-			continueSendReceive := true
 			var unackedHeartBeats = map[int]time.Time{}
+			serverUnresponsive := false
 
 			fname := "./LOGS-FCHECK-" + strconv.FormatInt(int64(nonce), 10) + ".log"
 			f, fileErr := os.Create(fname)
@@ -338,55 +344,54 @@ func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureD
 			seqNum := 0
 
 			for {
-				if continueSendReceive {
-					heartBeat := HBeatMessage{
-						EpochNonce: uint64(nonce),
-						SeqNum:     uint64(seqNum),
-					}
+				heartBeat := HBeatMessage{
+					EpochNonce: uint64(nonce),
+					SeqNum:     uint64(seqNum),
+				}
 
-					var heartBeatSentTime time.Time
-					if _, err := f.WriteString("retransmission time for seq num " + strconv.FormatInt(int64(seqNum), 10) + ": " + retransmissionDuration.String() + "\n"); err != nil {
+				var heartBeatSentTime time.Time
+				if _, err := f.WriteString("retransmission time for seq num " + strconv.FormatInt(int64(seqNum), 10) + ": " + retransmissionDuration.String() + "\n"); err != nil {
+					check(err)
+				}
+				f.Sync()
+
+				// SENDING HEARTBEAT
+				select {
+				case <-time.After(retransmissionDuration):
+					rtt = newRtt
+					if _, err := f.WriteString("rtt value: " + rtt.String() + "\n"); err != nil {
 						check(err)
 					}
 					f.Sync()
 
-					// SENDING HEARTBEAT
-					select {
-					case <-time.After(retransmissionDuration):
-						rtt = newRtt
-						if _, err := f.WriteString("rtt value: " + rtt.String() + "\n"); err != nil {
-							check(err)
-						}
-						f.Sync()
-						//fmt.Println("rtt value: " + rtt.String())
-
-						heartBeatSentTime = time.Now()
-						unackedHeartBeats[seqNum] = heartBeatSentTime
-						if _, err := conn.Write(encode(&heartBeat)); err != nil {
-							fmt.Println("udp write failed: " + err.Error())
-						}
+					heartBeatSentTime = time.Now()
+					unackedHeartBeats[seqNum] = heartBeatSentTime
+					if _, err := conn.Write(encode(&heartBeat)); err != nil {
+						fmt.Println("udp write failed: " + err.Error())
+					} else {
 						if _, err := f.WriteString("heartbeat sent at time: " + heartBeatSentTime.String() + "\n"); err != nil {
 							check(err)
 						}
 						f.Sync()
-						// fmt.Println("heartbeat sent at time: " + heartBeatSentTime.String())
 					}
+				}
 
-					// RECEIVE ACK CODE STARTS
-					recvBuf := make([]byte, 1024)
-					conn.SetReadDeadline(time.Now().Add(rtt))
-					fromUDP, _, err := conn.ReadFromUDP(recvBuf)
-					ackReceivedTime := time.Now()
-					if err != nil {
-						if _, err := f.WriteString("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10) + "\n"); err != nil {
-							check(err)
-						}
-						f.Sync()
-						//fmt.Println("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10))
+				// RECEIVE ACK CODE STARTS
+				recvBuf := make([]byte, 1024)
+				conn.SetReadDeadline(time.Now().Add(rtt))
+				fromUDP, _, err := conn.ReadFromUDP(recvBuf)
+				ackReceivedTime := time.Now()
+				if err != nil {
+					if _, err := f.WriteString("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10) + "\n"); err != nil {
+						check(err)
+					}
+					f.Sync()
+					//fmt.Println("RTT limit exceeded for seqNum: " + strconv.FormatInt(int64(seqNum), 10))
 
-						retransmissionDuration = 0
-						lostMsgs++
-						if uint8(lostMsgs) == arg.LostMsgThresh {
+					retransmissionDuration = 0
+					lostMsgs++
+					if uint8(lostMsgs) >= arg.LostMsgThresh {
+						if !serverUnresponsive {
 							if _, err := f.WriteString("sending failure info to failureChannel for routine with nonce " + strconv.FormatInt(int64(nonce), 10) + "\n"); err != nil {
 								check(err)
 							}
@@ -394,15 +399,25 @@ func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureD
 
 							failureDetected := FailureDetected{UDPIpPort: conn.RemoteAddr().String(), Timestamp: time.Now(), ServerId: nonce}
 							fmt.Printf("Sending failure notification to notifyChannel inside the go routine: %v\n", failureDetected)
+							serverUnresponsive = true
 							failureChan <- failureDetected
-							continueSendReceive = false
-							fmt.Println("Exiting goroutine for serverId ", nonce)
-							return
 						}
+					}
+				} else {
+					decoded, err := decode(recvBuf, fromUDP)
+					if err != nil {
+						fmt.Println("could not decode server packet: " + err.Error())
 					} else {
-						decoded, err := decode(recvBuf, fromUDP)
-						if err != nil {
-							fmt.Println("could not decode server packet: " + err.Error())
+
+						if lostMsgs > 0 {
+							lostMsgs = 0
+						}
+
+						if serverUnresponsive {
+							serverUnresponsive = false
+							unackedHeartBeats = make(map[int]time.Time)
+							fmt.Printf("\nFCHECK: server %v initially unreachable is now  responding\n", decoded.HBEatEpochNonce)
+							successChan <- nonce
 						} else {
 							_, ok := unackedHeartBeats[int(decoded.HBEatSeqNum)]
 							if ok && decoded.HBEatEpochNonce == uint64(nonce) {
@@ -412,32 +427,21 @@ func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureD
 									check(err)
 								}
 								f.Sync()
-								// fmt.Println("Received ack; seq num: " + strconv.FormatUint(decoded.HBEatSeqNum, 10) + "; estimated rtt for this ack: " + estimatedRtt.String())
-
 								delete(unackedHeartBeats, int(decoded.HBEatSeqNum))
 								newRtt = (estimatedRtt + rtt) / 2
 								if _, err := f.WriteString("New RTT: " + newRtt.String() + "\n\n\n"); err != nil {
 									check(err)
 								}
 								f.Sync()
-								// .Println("New RTT: " + newRtt.String())
-								// fmt.Printf("\n\n")
-
-								if lostMsgs > 0 {
-									lostMsgs = 0
-								}
-							} else {
-								fmt.Println("received invalid ack; seq num or nonce does not match: ", decoded)
-								fmt.Println("args received from client: ", arg)
 							}
 						}
 					}
-					seqNum++
 				}
+				seqNum++
 			}
 		}(conn, servId)
 	}
-	return failureChan, nil
+	return failureChan, successChan, nil
 }
 
 // Tells the library to stop monitoring/responding acks.
