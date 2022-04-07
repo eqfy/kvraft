@@ -45,10 +45,9 @@ type PutRecvd struct {
 	Value    string
 }
 
-type PutResult struct {
+type PutCommitted struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
 	Key      string
 	Value    string
 }
@@ -75,10 +74,9 @@ type GetRecvd struct {
 	Key      string
 }
 
-type GetResult struct {
+type GetCommitted struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
 	Key      string
 	Value    string
 }
@@ -501,6 +499,16 @@ func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 	s.commandFromClient <- clientCommand
 	// Once done is received, that means the command has been committed
 	command := <-clientCommand.done
+	if command.Key != arg.Key {
+		util.PrintfRed("Get Request: Applied Command key: %s and Client Command key: %s mismatch", command.Key, arg.Key)
+		return errors.New("get request: applied command key and client command key mismatch")
+	}
+	gtrace.RecordAction(GetCommitted{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      command.Key,
+		Value:    command.Val,
+	})
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
@@ -535,6 +543,20 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 	s.commandFromClient <- clientCommand
 	// Once done is received, that means the command has been committed
 	command := <-clientCommand.done
+	if command.Key != arg.Key {
+		util.PrintfRed("Put Request: Applied Command key: %s and Client Command key: %s mismatch", command.Key, arg.Key)
+		return errors.New("put request: applied command key and client command key mismatch")
+	}
+	if command.Val != arg.Value {
+		util.PrintfRed("Put Request: Applied Command Value: %s and Client Command Value: %s mismatch", command.Val, arg.Value)
+		return errors.New("Put request: applied command value and client command value mismatch")
+	}
+	ptrace.RecordAction(PutCommitted{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      command.Key,
+		Value:    command.Val,
+	})
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
@@ -650,6 +672,7 @@ func (s *Server) doCommit(errorChan chan<- error) {
 		s.lastApplied++
 		_, err := s.applyEntry(s.log[s.commitIndex])
 		if err != nil {
+			// question: should we do a s.lastApplied-- here?
 			errorChan <- err
 		}
 	}
@@ -753,7 +776,7 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 		fmt.Printf("(KV STATE): %v\n", s.kv)
 		s.L.Unlock()
 		fmt.Printf("(KV STATE): Applied Entry, Key: %s, Val: %s\n", entry.Command.Key, newVal)
-		return Command{Kind: Get, Key: entry.Command.Key, Val: entry.Command.Val}, nil
+		return Command{Kind: Get, Key: entry.Command.Key, Val: newVal}, nil
 	case Get:
 		// TODO return result of get
 		command := Command{Kind: Get, Key: entry.Command.Key}
@@ -764,7 +787,6 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 	default:
 		return Command{}, fmt.Errorf("unable to apply entry %v", entry)
 	}
-	return Command{}, nil
 }
 
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
