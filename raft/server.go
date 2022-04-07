@@ -142,9 +142,12 @@ type Server struct {
 	// Persistent state
 	currentTerm uint32 // Might actually be unused
 	votedFor    uint8
-	logMu       sync.RWMutex //protects following
-	log         []Entry
-	kv          map[string]string
+
+	logMu sync.RWMutex //protects following
+	log   []Entry
+
+	kvMu sync.RWMutex // protects following
+	kv   map[string]string
 
 	// Volatile state
 	commitIndex uint64
@@ -170,9 +173,6 @@ type Server struct {
 	followerLogIndexGreaterThanNextIndex chan bool // probably follower info
 	existsInterestingN                   chan bool
 	runLeader                            chan bool
-
-	// Lock
-	L sync.RWMutex
 }
 
 // AppendEntries RPC
@@ -721,8 +721,8 @@ func (s *Server) sendHeartbeats(stopHeartbeats chan bool) {
 }
 
 func (s *Server) doCommit(errorChan chan<- error) {
-	s.L.Lock()
-	defer s.L.Unlock()
+	s.kvMu.Lock()
+	defer s.kvMu.Unlock()
 	for s.commitIndex > s.lastApplied {
 		s.lastApplied++
 		_, err := s.applyEntry(s.log[s.lastApplied])
