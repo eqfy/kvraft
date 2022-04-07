@@ -139,8 +139,8 @@ type Server struct {
 
 	// Raft Paper
 	// Persistent state
-	currentTerm uint32 // Might actually be unused
-	votedFor    uint8
+	currentTerm uint32
+	votedFor    uint8 // Unused
 	log         []Entry
 	kv          map[string]string
 	// Volatile state
@@ -163,10 +163,10 @@ type Server struct {
 	runCandidate chan bool
 
 	// leader
-	commandFromClient  chan ClientCommand
-	triggerForceUpdate chan bool // probably follower info
-	existsInterestingN chan bool
-	runLeader          chan bool
+	commandFromClient           chan ClientCommand
+	triggerAllFollowerLogUpdate chan bool
+	existsInterestingN          chan bool
+	runLeader                   chan bool
 
 	// Lock
 	L sync.RWMutex
@@ -317,6 +317,7 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	// leader sync
 	s.commandFromClient = make(chan ClientCommand, 1) //question: what should be the capacity of this channel?
 	s.runLeader = make(chan bool, 1)
+	s.triggerAllFollowerLogUpdate = make(chan bool, 1)
 
 }
 
@@ -483,10 +484,17 @@ func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *Leader
 		util.PrintlnRed("NotifyFailOverLeader: ServerId mismatch, received Id %d and actual Id is %d ", notification.ServerId, s.ServerId)
 		return errors.New("NotifyFailOverLeader: ServerId mismatch")
 	}
+
+	// end follower loop, start server loop, forces log on other follower servers
+	s.runFollower <- false
+
 	cTrace := s.tracer.ReceiveToken(notification.Token)
 	cTrace.RecordAction(ServerFailRecvd{FailedServerId: notification.FailedLeaderId})
 	s.Peers = notification.Peers
 	s.currentTerm = uint32(notification.Term)
+	s.isLeader = true
+	s.runLeader <- true
+	s.triggerAllFollowerLogUpdate <- true
 
 	reply.ServerId = s.ServerId
 	reply.Token = cTrace.GenerateToken()
@@ -677,7 +685,6 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		set commitIndex = N (§5.3, §5.4)
 	*/
 
-	// var err error
 	for {
 		select {
 		case canRunLeader := <-s.runLeader:
@@ -694,32 +701,8 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		case clientCommand := <-s.commandFromClient:
 			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
 			go s.leaderHandleCommand(clientCommand)
-		case <-s.triggerForceUpdate:
-			// FIXME When is matchIndex and nextIndex updated?
-			prevLogEntry := s.log[len(s.log)-1]
-			forceUpdateWg := sync.WaitGroup{}
-			for i, peer := range s.Peers {
-				if s.matchIndex[i] >= s.nextIndex[i] {
-					forceUpdateWg.Add(1)
-					peerReply := make(chan bool, 1)
-					go func() {
-						for {
-							appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[i]:], s.commitIndex}
-							go s.sendAppendEntry(peer, &appendEntryArg, peerReply)
-							success := <-peerReply
-							if success {
-								s.nextIndex[i] = prevLogEntry.Index + 1
-								s.matchIndex[i] = prevLogEntry.Index
-								forceUpdateWg.Done()
-								break
-							}
-							s.nextIndex[i] -= 1
-						}
-					}()
-				}
-			}
-			forceUpdateWg.Wait()
-
+		case <-s.triggerAllFollowerLogUpdate:
+			s.forceUpdateAllFollowerLog()
 		case <-s.existsInterestingN:
 			// TODO
 		}
@@ -739,7 +722,7 @@ func (s *Server) initLeaderVolatileState() {
 func (s *Server) doCommit(errorChan chan<- error) {
 	for s.commitIndex > s.lastApplied {
 		s.lastApplied++
-		_, err := s.applyEntry(s.log[s.commitIndex])
+		_, err := s.applyEntry(s.log[s.lastApplied])
 		if err != nil {
 			errorChan <- err
 		}
@@ -790,47 +773,131 @@ func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 	count := 0
 
 	for count < currPeers {
-		<-peerReplies // wait for one task to complete
+		replySuccess := <-peerReplies // wait for one task to complete
+		if !replySuccess {
+			continue
+		}
 		count++
-		if uint8(count) == majority {
+		if uint8(count) >= majority {
 			fmt.Println("(Leader RECEIVE REPLIES): Majority reached")
 			majorityReplied <- true
 		}
 	}
+
 	fmt.Println("(Leader RECEIVE REPLIES): All followers acked.")
 }
 
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
 func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool) error {
+	// FIXME maybe we should move this into the for loop? This way we can keep retrying even if the rpc.dial fails for a couple times
 	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
-	defer peerConn.Close()
 	if err != nil {
 		fmt.Printf("Can't connect to peer id=%d, address=%s, error=%v\n", peer.ServerId, peer.ServerListenAddr, err)
 		return err
 	}
+	defer peerConn.Close()
+
 	var reply AppendEntriesReply
+	ticker := time.NewTicker(20 * time.Second)
 	done := make(chan *rpc.Call, 1)
 	for {
 		peerConn.Go("Server.AppendEntries", args, &reply, done)
 		select {
 		/* leader retries indefinitely if can't reach follower*/
-		case <-time.After(20 * time.Second):
+		case <-ticker.C:
 			continue
 		case call := <-done:
 			if call.Error == nil {
 				res := call.Reply.(*AppendEntriesReply)
 				fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
-					/* To-Do: force copy logs*/
-					peerReplies <- false
+					// Follower log is inconsistent with leader, neet to force and wait for follower to update log
+					// Should happen at most once per term
+					wg := sync.WaitGroup{}
+					s.forceUpdateFollowerLog(peer.ServerId, wg)
+					wg.Wait()
+					// After follower log has updated, we actually know that the current entry will be also be added to the follower log.
+					// This is because the current entry has already been added to the leader's log and
+					// followers' AppendEntries will eventually accept everything on leader's log
+					peerReplies <- true
+					return nil
 				} else {
+					if len(args.Entries) > 0 {
+						lastArgEntrySentIndex := args.Entries[len(args.Entries)-1].Index
+						if s.matchIndex[peer.ServerId] < lastArgEntrySentIndex {
+							s.matchIndex[peer.ServerId] = lastArgEntrySentIndex
+						}
+						if s.nextIndex[peer.ServerId] < lastArgEntrySentIndex+1 {
+							s.nextIndex[peer.ServerId] = lastArgEntrySentIndex + 1
+						}
+					}
 					peerReplies <- true
 					return nil
 				}
 			} else {
 				fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", call.Error, peer.ServerId)
-				return call.Error // what to do when AppendEntry returns error?
+				// return call.Error // what to do when AppendEntry returns error?
 			}
+		}
+	}
+}
+
+// A synchronous appendEntry that does not retry, used only for forceUpdateFollowerLog
+func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg) (success bool, err error) {
+	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
+	if err != nil {
+		fmt.Printf("Can't connect to peer id=%d, address=%s, error=%v\n", peer.ServerId, peer.ServerListenAddr, err)
+		return false, err
+	}
+	defer peerConn.Close()
+
+	var reply AppendEntriesReply
+	err = peerConn.Call("Server.AppendEntries", arg, &reply)
+	if err != nil {
+		fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", err, peer.ServerId)
+	} else {
+		fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", reply, peer.ServerId)
+	}
+	return reply.Success, err
+}
+
+// Force all known peers to adopt consistent logs
+func (s *Server) forceUpdateAllFollowerLog() {
+	forceUpdateWg := sync.WaitGroup{}
+	for _, peer := range s.Peers {
+		peerId := peer.ServerId
+		if peerId == s.ServerId {
+			continue
+		}
+		if s.matchIndex[peerId] >= s.nextIndex[peerId] {
+			go s.forceUpdateFollowerLog(peerId, forceUpdateWg)
+		}
+	}
+	forceUpdateWg.Wait()
+}
+
+// Force update the log of a single follower, uses a waitgroup for notifying success
+// Succeeds or retries indefinitely
+func (s *Server) forceUpdateFollowerLog(peerIndex uint8, wg sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+	prevLogEntry := s.log[s.nextIndex[peerIndex]-1]
+	peer := s.Peers[peerIndex]
+	for {
+		// retry until success or failure
+		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex}
+		success, err := s.sendAppendEntrySync(peer, &appendEntryArg)
+		if err != nil {
+			<-time.After(10 * time.Second)
+			continue
+		}
+		if success {
+			s.nextIndex[peerIndex] = prevLogEntry.Index + 1
+			s.matchIndex[peerIndex] = prevLogEntry.Index
+			break
+		} else {
+			s.nextIndex[peerIndex] -= 1
+			prevLogEntry = s.log[s.nextIndex[peerIndex]-1]
 		}
 	}
 }
@@ -862,6 +929,8 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
 	// FIXME maybe instead of doing this, we can just look at s.isLeader
 	<-s.appendEntriesCanRespond
+
+	reply.Term = s.currentTerm
 
 	// Ensure that the arg entries are in ASC order according to index
 	sort.Slice(arg.Entries, func(i, j int) bool {
@@ -925,7 +994,6 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 		s.commitIndexUpdated <- true
 	}
 	reply.Success = true
-	reply.Term = arg.Term
 	s.appendEntriesDone <- true
 	return nil
 }
