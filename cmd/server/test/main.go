@@ -83,10 +83,12 @@ func main() {
 		if err != nil {
 			util.PrintfRed("Test 1 Get Error: %v \n", err)
 		}
+		if args.Key != reply.Key {
+			util.PrintfRed("Test 1 Get Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+		}
 		expectedVal := strconv.Itoa(i) + "0"
 		if reply.Value != expectedVal {
 			util.PrintfRed("Test 1 Get Error: Expected value is %s, actual value is %s\n", expectedVal, reply.Value)
 		}
 	}
-
 }
