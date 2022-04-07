@@ -45,26 +45,6 @@ type PutRecvd struct {
 	Value    string
 }
 
-type PutFwd struct {
-	ClientId string
-	OpId     uint32
-	GId      uint64
-	Key      string
-	Value    string
-}
-
-type InternalPutResponse struct {
-	Token tracing.TracingToken
-}
-
-type PutFwdRecvd struct {
-	ClientId string
-	OpId     uint32
-	GId      uint64
-	Key      string
-	Value    string
-}
-
 type PutResult struct {
 	ClientId string
 	OpId     uint32
@@ -185,20 +165,6 @@ type AppendEntriesArg struct {
 type AppendEntriesReply struct {
 	Term    uint32
 	Success bool
-}
-
-// RequestVote RPC (Unused)
-type RequestVoteArg struct {
-	term         uint32
-	candidateId  uint8
-	lastLogIndex uint64
-	lastLogTerm  uint64
-}
-
-type RequestVoteReply struct {
-	term        uint32
-	voteGranted bool
-	lastLogTerm uint32
 }
 
 // Log entry definition
@@ -529,6 +495,10 @@ func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 		},
 		done: done,
 	}
+
+	fmt.Printf("(Leader Get): received client command=%v\n", clientCommand)
+	// log the get request
+
 	s.commandFromClient <- clientCommand
 	command := <-clientCommand.done
 
@@ -565,6 +535,7 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 
 	s.commandFromClient <- clientCommand
 	command := <-clientCommand.done
+	// log the put request
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
@@ -625,22 +596,6 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 	}
 }
 
-func (s *Server) raftCandidate(errorChan chan<- error) {}
-
-func (s *Server) raftCandidateLoop(errorChan chan<- error) {
-	/*
-		(ELECTION)
-		- On conversion to candidate, start election:
-		- Increment currentTerm
-		   - Vote for self
-		   - Reset election timer
-		   - Send RequestVote RPCs to all other servers
-		- If votes received from majority of servers: become leader
-		- If AppendEntries RPC received from new leader: convert to follower
-		- If election timeout elapses: start new election
-	*/
-}
-
 func (s *Server) raftLeader(errorChan chan<- error) {
 	for {
 		canRunLeader := <-s.runLeader
@@ -652,9 +607,6 @@ func (s *Server) raftLeader(errorChan chan<- error) {
 
 func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 	/*
-		- Upon election: send initial empty AppendEntries RPCs
-		(heartbeat) to each server; repeat during idle periods to
-		prevent election timeouts (§5.2) (ELECTION)
 		- If command received from client: append entry to local log,
 		respond after entry applied to state machine (§5.3)
 		- If last log index ≥ nextIndex for a follower: send
