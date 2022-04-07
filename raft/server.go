@@ -151,8 +151,6 @@ type Server struct {
 	followerLogIndexGreaterThanNextIndex chan bool // probably follower info
 	existsInterestingN                   chan bool
 	runLeader                            chan bool
-
-	appliedEntriesMap map[Entry]bool
 }
 
 // AppendEntries RPC
@@ -268,7 +266,6 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	s.kv = make(map[string]string)
 	s.log = make([]Entry, 0)
 	s.log = append(s.log, Entry{}) // log is 1-indexed
-	s.appliedEntriesMap = make(map[Entry]bool)
 
 	// join sync
 	joinComplete = make(chan bool)
@@ -712,10 +709,6 @@ func (s *Server) doCommit(errorChan chan<- error) {
 	defer s.kvMu.Unlock()
 	for s.commitIndex > s.lastApplied {
 		s.lastApplied++
-		_, existsInMap := s.appliedEntriesMap[s.log[s.lastApplied]]
-		if existsInMap {
-			continue
-		}
 		_, err := s.applyEntry(s.log[s.lastApplied])
 		if err != nil {
 			// question: should we do a s.lastApplied-- here?
@@ -756,15 +749,14 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 	/* Can return once we have a majority*/
 	<-majorityReplied
 
-	/* Mark entry as committed, and notify server to update kv state*/
+	/* Mark entry as committed, and applyEntry to update kv state*/
 	s.commitIndex += 1
 	command, err := s.applyEntry(newEntry)
 	if err != nil {
 		errorChan <- err
 		util.PrintfRed("error %v\n", err)
 	}
-
-	s.appliedEntriesMap[newEntry] = true
+	s.lastApplied++
 	s.commitIndexUpdated <- true
 	fmt.Printf("(Leader AppendEntries): Successfully replicated entry=%v on majority, commitIndex updated to be %d\n", newEntry, s.commitIndex)
 	clientCommand.done <- command
