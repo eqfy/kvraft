@@ -497,14 +497,13 @@ func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 	}
 
 	fmt.Printf("(Leader Get): received client command=%v\n", clientCommand)
-	// log the get request
 
 	s.commandFromClient <- clientCommand
+	// Once done is received, that means the command has been committed
 	command := <-clientCommand.done
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
-	//TODO replace
 	resp.Key = command.Key
 	resp.Value = command.Val
 	resp.Token = gtrace.GenerateToken()
@@ -534,8 +533,8 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 	fmt.Printf("(Leader Put): received client command=%v\n", clientCommand)
 
 	s.commandFromClient <- clientCommand
+	// Once done is received, that means the command has been committed
 	command := <-clientCommand.done
-	// log the put request
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
