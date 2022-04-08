@@ -6,7 +6,6 @@ import (
 	"net/rpc"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"cs.ubc.ca/cpsc416/kvraft/util"
 
@@ -411,16 +410,21 @@ func (d *KVS) sender() {
 				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
 				d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
+				putDoneChan := d.leaderClientRPC.Go("Request.Put", putReq, nil, nil)
+				// TODO: this is just to stop keepSending from running into an infinite loop for Milestone 2
+				//       We likely need to add something to the commented out select block below once leader reconfiguration is added
+				<-putDoneChan.Done
+				keepSending = false
 				d.leaderNodeLock.Unlock()
 
-				select {
-				// case putRes = <-d.tpl.PutResChan:
-				// 	keepSending = false
-				case <-d.leaderReconfiguredDone:
-					// Send again
-				case <-time.After(2 * time.Second): // set a timeout of 2 second
-					// Send again
-				}
+				// select {
+				// // case putRes = <-d.tpl.PutResChan:
+				// // 	keepSending = false
+				// case <-d.leaderReconfiguredDone:
+				// 	// Send again
+				// case <-time.After(2 * time.Second): // set a timeout of 2 second
+				// 	// Send again
+				// }
 			}
 
 			// waits until the tail server gets back with put success
@@ -436,10 +440,9 @@ func (d *KVS) sender() {
 
 			d.getTrace = req.tracer.CreateTrace()
 			d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
-			
+
 			var getReq GetRequest = GetRequest{req.gq.ClientId, req.gq.OpId, req.gq.Key, d.getTrace.GenerateToken()}
 			var getRes GetResponse
-
 
 			var err error
 			keepSending := true
