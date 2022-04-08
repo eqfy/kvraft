@@ -92,6 +92,13 @@ type ForceFollowerLog struct {
 	matchIndex  uint64
 }
 
+type BecameLeader struct {
+	ServerId uint8
+}
+type BecameFollower struct {
+	ServerId uint8
+}
+
 // State and RPC
 
 type ServerConfig struct {
@@ -612,6 +619,7 @@ func (s *Server) runRaft() {
 func (s *Server) raftFollower(errorChan chan<- error) {
 	for {
 		canRunFollower := <-s.runFollower
+		s.trace.RecordAction(BecameFollower{s.ServerId})
 
 		// init volatile state
 		s.commitIndex = 0
@@ -651,6 +659,8 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 func (s *Server) raftLeader(errorChan chan<- error) {
 	for {
 		canRunLeader := <-s.runLeader
+		s.trace.RecordAction(BecameLeader{s.ServerId})
+
 		// init volatile state
 		s.commitIndex = 0
 		s.lastApplied = 0
@@ -852,7 +862,7 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				// fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
 					if res.Term > args.Term {
-						// change to server to follower
+						// change server to follower
 						s.runLeader <- false
 						s.runFollower <- true
 						fmt.Printf("Server %v downgraded to follower\n", s.ServerId)
