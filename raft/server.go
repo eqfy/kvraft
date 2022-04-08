@@ -708,8 +708,8 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		case clientCommand := <-s.commandFromClient:
 			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
 			go s.leaderHandleCommand(clientCommand)
-		case <-s.triggerAllFollowerLogUpdate:
-			s.forceUpdateAllFollowerLog()
+		// case <-s.triggerAllFollowerLogUpdate:
+		// 	s.forceUpdateAllFollowerLog()
 		case <-s.existsInterestingN:
 			// TODO
 		}
@@ -815,7 +815,7 @@ func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 
 	for count < currPeers {
 		replySuccess := <-peerReplies // wait for one task to complete
-		if !replySuccess {
+		if !replySuccess {            // FIXME can probably remove, will never go into this case
 			continue
 		}
 		count++
@@ -852,14 +852,18 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				res := call.Reply.(*AppendEntriesReply)
 				// fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
+					if res.Term > args.Term {
+						// TODO change to follower? or just force logs
+					}
+
 					// Follower log is inconsistent with leader, neet to force and wait for follower to update log
-					// Should happen at most once per term
-					wg := sync.WaitGroup{}
-					s.forceUpdateFollowerLog(peer.ServerId, wg)
-					wg.Wait()
-					// After follower log has updated, we actually know that the current entry will be also be added to the follower log.
+					// After follower log has updated, the current entry will be also be added to the follower log.
 					// This is because the current entry has already been added to the leader's log and
 					// followers' AppendEntries will eventually accept everything on leader's log
+					forceUpdateDone := make(chan bool, 1)
+					s.forceUpdateFollowerLog(peer.ServerId, forceUpdateDone)
+					<-forceUpdateDone
+
 					peerReplies <- true
 					return nil
 				} else {
@@ -903,25 +907,23 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg) (su
 }
 
 // Force all known peers to adopt consistent logs
-func (s *Server) forceUpdateAllFollowerLog() {
-	forceUpdateWg := sync.WaitGroup{}
-	for _, peer := range s.Peers {
-		peerId := peer.ServerId
-		if peerId == s.ServerId {
-			continue
-		}
-		if s.matchIndex[peerId] >= s.nextIndex[peerId] {
-			go s.forceUpdateFollowerLog(peerId, forceUpdateWg)
-		}
-	}
-	forceUpdateWg.Wait()
-}
+// func (s *Server) forceUpdateAllFollowerLog() {
+// 	forceUpdateWg := sync.WaitGroup{}
+// 	for _, peer := range s.Peers {
+// 		peerId := peer.ServerId
+// 		if peerId == s.ServerId {
+// 			continue
+// 		}
+// 		if s.matchIndex[peerId] >= s.nextIndex[peerId] {
+// 			go s.forceUpdateFollowerLog(peerId, forceUpdateWg)
+// 		}
+// 	}
+// 	forceUpdateWg.Wait()
+// }
 
 // Force update the log of a single follower, uses a waitgroup for notifying success
 // Succeeds or retries indefinitely
-func (s *Server) forceUpdateFollowerLog(peerIndex uint8, wg sync.WaitGroup) {
-	wg.Add(1)
-	defer wg.Done()
+func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool) {
 	prevLogEntry := s.log[s.nextIndex[peerIndex]-1]
 	peer := s.Peers[peerIndex]
 	for {
@@ -941,6 +943,7 @@ func (s *Server) forceUpdateFollowerLog(peerIndex uint8, wg sync.WaitGroup) {
 			prevLogEntry = s.log[s.nextIndex[peerIndex]-1]
 		}
 	}
+	done <- true
 }
 
 func (s *Server) applyEntry(entry Entry) (Command, error) {
