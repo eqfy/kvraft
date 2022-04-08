@@ -48,10 +48,12 @@ func main() {
 			util.PrintfRed("Test 1 Put Error: %v \n", err)
 		}
 		if args.Key != reply.Key {
-			util.PrintfRed("Test 1 Put Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+			util.PrintfRed("Test 1 Put Error: Expected Key %s , Actual Key \n", args.Key, reply.Key)
 		}
 		if args.Value != reply.Value {
-			util.PrintfRed("Test 1 Put Error: Expected Value %s , Actual Value", args.Value, reply.Value)
+			util.PrintfRed("Test 1 Put Error: Expected Value %s , Actual Value \n", args.Value, reply.Value)
+		} else {
+			util.PrintfGreen("Test 1 Put Passed with key=%s, val=%s \n", strconv.Itoa(i), strconv.Itoa(i)+"0")
 		}
 	}
 
@@ -69,11 +71,13 @@ func main() {
 			util.PrintfRed("Test 1 Get Error: %v \n", err)
 		}
 		if args.Key != reply.Key {
-			util.PrintfRed("Test 1 Get Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+			util.PrintfRed("Test 1 Get Error: Expected Key %s , Actual Key \n", args.Key, reply.Key)
 		}
 		expectedVal := strconv.Itoa(i) + "0"
 		if reply.Value != expectedVal {
-			util.PrintfRed("Test 1 Get Error: Expected value is %s, actual value is %s\n", expectedVal, reply.Value)
+			util.PrintfRed("Test 1 Get Error: Expected value is %s, actual value is %s \n", expectedVal, reply.Value)
+		} else {
+			util.PrintfGreen("Test 1 Get Passed: expected value: %s, got %s \n", expectedVal, reply.Value)
 		}
 	}
 
@@ -94,7 +98,9 @@ func main() {
 		util.PrintfRed("Test 2 Get1 Error: %v \n", err)
 	}
 	if reply1.Value != "" {
-		util.PrintfRed("Test 2 Get1 Error: expected empty string, got %s", reply1.Value)
+		util.PrintfRed("Test 2 Get1 Error: expected empty string, got %s \n", reply1.Value)
+	} else {
+		util.PrintfGreen("Test 2 Get1 Passed: expected value: , got %s \n", "", reply1.Value)
 	}
 
 	opId += 1
@@ -119,7 +125,8 @@ func main() {
 		util.PrintfRed("Test 2 Get2 Error: %v \n", err)
 	}
 	if reply2.Value != value {
-		util.PrintfRed("Test 2 Get2 Error: expected value: %s, got %s", value, reply1.Value)
+		util.PrintfRed("Test 2 Get2 Error: expected value: %s, got %s \n", value, reply2.Value)
+	} else {
+		util.PrintfGreen("Test 2 Get2 Passed: expected value: %s, got %s \n", value, reply2.Value)
 	}
-
 }
