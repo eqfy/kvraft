@@ -1,6 +1,6 @@
 {
   "ClientAPIListenAddr": "127.0.0.1:23009",
-  "ServerAPIListenAddr": "127.0.0.1:23003",
+  "ServerAPIListenAddr": "127.0.0.1:23002",
   "LostMsgsThresh": 3,
   "NumServers": 5,
   "TracingServerAddr": "127.0.0.1:23000",

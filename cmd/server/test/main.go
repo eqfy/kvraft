@@ -6,26 +6,11 @@ import (
 	"os"
 	"strconv"
 
+	"cs.ubc.ca/cpsc416/kvraft/kvslib"
 	"cs.ubc.ca/cpsc416/kvraft/raft"
 	"cs.ubc.ca/cpsc416/kvraft/util"
 	"github.com/DistributedClocks/tracing"
 )
-
-type PutRequest struct {
-	ClientId string
-	OpId     uint32
-	Key      string
-	Value    string
-	Token    tracing.TracingToken
-}
-
-type PutResponse struct {
-	ClientId string
-	OpId     uint32
-	Key      string
-	Value    string
-	Token    tracing.TracingToken
-}
 
 func main() {
 	var config raft.ClientConfig
@@ -51,44 +36,97 @@ func main() {
 
 	// Test 1 Put: Add Key=1 to 10, Value=10 to 100
 	for i := 1; i < 11; i++ {
-		args := &PutRequest{
+		args := &kvslib.PutRequest{
 			ClientId: config.ClientID,
 			OpId:     uint32(i),
 			Key:      strconv.Itoa(i),
 			Value:    strconv.Itoa(i) + "0",
 			Token:    ctrace.GenerateToken()}
-		var reply PutResponse
+		var reply kvslib.PutResponse
 		err = leaderConn.Call("Server.Put", args, &reply)
 		if err != nil {
 			util.PrintfRed("Test 1 Put Error: %v \n", err)
 		}
 		if args.Key != reply.Key {
-			util.PrintfRed("Test 1 Put Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+			util.PrintfRed("Test 1 Put Error: Expected Key %s , Actual Key \n", args.Key, reply.Key)
 		}
 		if args.Value != reply.Value {
-			util.PrintfRed("Test 1 Put Error: Expected Value %s , Actual Value", args.Value, reply.Value)
+			util.PrintfRed("Test 1 Put Error: Expected Value %s , Actual Value \n", args.Value, reply.Value)
+		} else {
+			util.PrintfGreen("Test 1 Put Passed with key=%s, val=%s \n", strconv.Itoa(i), strconv.Itoa(i)+"0")
 		}
 	}
 
 	// Test 1 Get: Get Key=1 to 10, verify values
 	for i := 1; i < 11; i++ {
-		args := &raft.GetRequest{
+		args := &kvslib.GetRequest{
 			ClientId: config.ClientID,
 			OpId:     uint32(i + 10),
 			Key:      strconv.Itoa(i),
 			Token:    ctrace.GenerateToken(),
 		}
-		var reply raft.GetResponse
+		var reply kvslib.GetResponse
 		err = leaderConn.Call("Server.Get", args, &reply)
 		if err != nil {
 			util.PrintfRed("Test 1 Get Error: %v \n", err)
 		}
 		if args.Key != reply.Key {
-			util.PrintfRed("Test 1 Get Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+			util.PrintfRed("Test 1 Get Error: Expected Key %s , Actual Key \n", args.Key, reply.Key)
 		}
 		expectedVal := strconv.Itoa(i) + "0"
 		if reply.Value != expectedVal {
-			util.PrintfRed("Test 1 Get Error: Expected value is %s, actual value is %s\n", expectedVal, reply.Value)
+			util.PrintfRed("Test 1 Get Error: Expected value is %s, actual value is %s \n", expectedVal, reply.Value)
+		} else {
+			util.PrintfGreen("Test 1 Get Passed: expected value: %s, got %s \n", expectedVal, reply.Value)
 		}
+	}
+
+	// Test 2: Sequential Get Put
+	key := strconv.Itoa(1000)
+	value := key + "0"
+
+	opId := 21
+	get_arg := &kvslib.GetRequest{
+		ClientId: config.ClientID,
+		OpId:     uint32(opId),
+		Key:      key,
+		Token:    ctrace.GenerateToken(),
+	}
+	var reply1 kvslib.GetResponse
+	err = leaderConn.Call("Server.Get", get_arg, &reply1)
+	if err != nil {
+		util.PrintfRed("Test 2 Get1 Error: %v \n", err)
+	}
+	if reply1.Value != "" {
+		util.PrintfRed("Test 2 Get1 Error: expected empty string, got %s \n", reply1.Value)
+	} else {
+		util.PrintfGreen("Test 2 Get1 Passed: expected value: , got %s \n", "", reply1.Value)
+	}
+
+	opId += 1
+	put_arg := &kvslib.PutRequest{
+		ClientId: config.ClientID,
+		OpId:     uint32(opId),
+		Key:      key,
+		Value:    key + "0",
+		Token:    ctrace.GenerateToken(),
+	}
+	var put_reply kvslib.PutResponse
+	err = leaderConn.Call("Server.Put", put_arg, &put_reply)
+	if err != nil {
+		util.PrintfRed("Test 2 Put Error: %v \n", err)
+	}
+
+	opId += 1
+	get_arg.OpId = uint32(opId)
+	var reply2 kvslib.GetResponse
+	err = leaderConn.Call("Server.Get", get_arg, &reply2)
+	if err != nil {
+		util.PrintfRed("Test 2 Get2 Error: %v \n", err)
+	}
+	if reply2.Value != value {
+		util.PrintfRed("Test 2 Get2 Error: expected value: %s, got %s \n", value, reply2.Value)
+	} else {
+		util.PrintfGreen("Test 2 Get2 Passed: expected value: %s, got %s \n", value, reply2.Value)
 	}
 }
