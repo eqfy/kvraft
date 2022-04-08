@@ -32,7 +32,6 @@ type Put struct {
 
 type PutResultRecvd struct {
 	OpId uint32
-	GId  uint64
 	Key  string
 }
 
@@ -44,7 +43,6 @@ type Get struct {
 
 type GetResultRecvd struct {
 	OpId  uint32
-	GId   uint64
 	Key   string
 	Value string
 }
@@ -63,7 +61,6 @@ type NotifyChannel chan ResultStruct
 
 type ResultStruct struct {
 	OpId   uint32
-	GId    uint64
 	Result string
 }
 
@@ -84,14 +81,13 @@ type KVS struct {
 	getTrace *tracing.Trace
 
 	// trackings
-	latestGId uint64
-	resRecvd  map[uint32]interface{}
+	resRecvd map[uint32]interface{}
 
 	// IP & ports
 
 	//leaderServerIPPort    string
 
-	putListenerIPPort   string
+	// putListenerIPPort   string
 	coordListenerIPPort string
 
 	// leader ports
@@ -107,7 +103,7 @@ type KVS struct {
 	leaderClientRPC *rpc.Client
 
 	// Listeners:
-	putTCPListener *net.TCPListener
+	// putTCPListener *net.TCPListener
 	// tsRPCListener *rpc.Server
 	serverFailListener *net.TCPListener
 
@@ -121,8 +117,7 @@ type KVS struct {
 	// mutex
 	reqLock sync.Mutex
 
-	reqQueue chan Req
-
+	reqQueue               chan Req
 	leaderNodeLock         sync.Mutex
 	leaderReconfiguredDone chan bool
 
@@ -147,32 +142,28 @@ type ClientInfo struct {
 type GetReq struct {
 	ClientId string
 	OpId     uint32
-	// LatestGId uint64
-	Key   string
-	Token tracing.TracingToken
+	Key      string
+	Token    tracing.TracingToken
 }
 
 type GetRes struct {
 	OpId  uint32
-	GId   uint64
 	Key   string
 	Value string
 	Token tracing.TracingToken
 }
 
 type PutReq struct {
-	ClientId        string
-	OpId            uint32
-	NewGetGId       uint64
-	Key             string
-	Value           string
-	PutListenerAddr string
-	Token           tracing.TracingToken
+	ClientId string
+	OpId     uint32
+	Key      string
+	Value    string
+	// PutListenerAddr string
+	Token tracing.TracingToken
 }
 
 type PutRes struct {
 	OpId  uint32
-	GId   uint64
 	Key   string
 	Token tracing.TracingToken
 }
@@ -310,7 +301,6 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 
 	d.notifyCh = make(NotifyChannel, chCapacity)
 	d.opId = 0
-	d.latestGId = 0
 	go coordRPCListener.Accept(coordTCPListener)
 	go d.sender()
 	go d.handleFailure()
@@ -346,7 +336,7 @@ func (d *KVS) Get(tracer *tracing.Tracer, clientId string, key string) (uint32, 
 // The returned value must be delivered asynchronously via the notify-channel channel returned in the Start call.
 func (d *KVS) Put(tracer *tracing.Tracer, clientId string, key string, value string) (uint32, error) {
 	atomic.AddUint32(&d.opId, 1)
-	req := Req{PutReq{clientId, d.opId, d.latestGId, key, value, d.putListenerIPPort, tracing.TracingToken{}}, GetReq{}, "PUT", tracer}
+	req := Req{PutReq{clientId, d.opId, key, value /* d.putListenerIPPort,  */, tracing.TracingToken{}}, GetReq{}, "PUT", tracer}
 	d.reqQueue <- req
 
 	return d.opId, nil
@@ -407,7 +397,7 @@ func (d *KVS) sender() {
 			// Send to leader server
 			d.putTrace = req.tracer.CreateTrace()
 			d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
-			var putReq PutReq = PutReq{req.pq.ClientId, req.pq.OpId, d.latestGId, req.pq.Key, req.pq.Value, d.putListenerIPPort, d.putTrace.GenerateToken()}
+			var putReq PutReq = PutReq{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value /* d.putListenerIPPort,  */, d.putTrace.GenerateToken()}
 
 			// var err error
 			keepSending := true
@@ -433,9 +423,9 @@ func (d *KVS) sender() {
 			// putRes := <-d.tpl.PutResChan  /* This is commented out because this will block d.hsClientRPC.Call from finishing*/
 			if _, ok := d.resRecvd[req.pq.OpId]; !ok && putRes.Key != "Duplicate" { // don't do anything if receiving a duplicate response
 				d.putTrace = req.tracer.ReceiveToken(putRes.Token)
-				d.putTrace.RecordAction(PutResultRecvd{putRes.OpId, putRes.GId, putRes.Key})
+				d.putTrace.RecordAction(PutResultRecvd{putRes.OpId, putRes.Key})
 				d.resRecvd[req.pq.OpId] = putRes
-				d.notifyCh <- ResultStruct{putRes.OpId, putRes.GId, putReq.Value} // FIXME maybe have putRes return the value
+				d.notifyCh <- ResultStruct{putRes.OpId, putReq.Value} // FIXME maybe have putRes return the value
 			}
 		} else if req.kind == "GET" {
 			// Send to tail server
@@ -462,16 +452,6 @@ func (d *KVS) sender() {
 					keepSending = false
 				}
 			}
-
-			// if _, ok := d.resRecvd[req.gq.OpId]; !ok { // don't do anything if receiving a duplicate response
-			// 	d.getTrace = req.tracer.ReceiveToken(getRes.Token)
-			// 	d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.GId, getRes.Key, getRes.Value})
-			// 	d.resRecvd[req.gq.OpId] = getRes
-			// 	if getRes.GId > d.latestGId {
-			// 		d.latestGId = getRes.GId
-			// 	}
-			// 	d.notifyCh <- ResultStruct{getRes.OpId, getRes.GId, getRes.Value}
-			// }
 		} else if req.kind == "STOP" {
 			d.allResRecvd <- true
 			return
@@ -495,7 +475,7 @@ func (d *KVS) Stop() {
 	d.coordClientRPC.Close()
 	d.leaderClientRPC.Close()
 	// d.tsClientRPC.Close()
-	d.putTCPListener.Close()
+	// d.putTCPListener.Close()
 	d.serverFailListener.Close()
 	d.ktrace.GenerateToken()
 
