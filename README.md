@@ -43,3 +43,13 @@ go run cmd/client/main.go {client-id}
 ````
 Where `{client-id}` is the ID of the current Client. This Should initialize a client instance that currently has a connection to the leader node from communicating with the coord
 
+Make sure you have all servers joined before running as the client will block until this condition is met. Run a combination of get and put requests with the syntax below:
+
+```console
+client.Get(key_name)
+client.Put(key_name, key_value)
+````
+
+The traces will confirm if these commands go through.
+
+
