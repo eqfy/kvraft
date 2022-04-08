@@ -830,7 +830,9 @@ func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
 func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool) error {
-	// FIXME maybe we should move this into the for loop? This way we can keep retrying even if the rpc.dial fails for a couple times
+	// If a connection cannot be established or the rpc call fails due to network issues, just return an error
+	// Once the follower becomes reachable again, the new appendEntry calls and if that fails, the forceUpdateFollowerLog calls
+	// should force the follower's log to be consistent (TODO verify this)
 	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
 	if err != nil {
 		fmt.Printf("Can't connect to peer id=%d, address=%s, error=%v\n", peer.ServerId, peer.ServerListenAddr, err)
@@ -853,7 +855,7 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				// fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
 					if res.Term > args.Term {
-						// TODO change to follower? or just force logs
+						// TODO change to server to follower
 					}
 
 					// Follower log is inconsistent with leader, neet to force and wait for follower to update log
@@ -881,7 +883,7 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				}
 			} else {
 				fmt.Printf("(Leader AppendEntries): Received AppendEntries Error=%v from serverId=%d\n", call.Error, peer.ServerId)
-				// return call.Error // what to do when AppendEntry returns error?
+				return call.Error // what to do when AppendEntry returns error?
 			}
 		}
 	}
