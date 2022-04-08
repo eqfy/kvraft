@@ -81,6 +81,32 @@ type GetCommitted struct {
 	Value    string
 }
 
+type AppendEntriesRequestSent struct {
+	AppendEntriesArg
+	Token tracing.TracingToken
+}
+
+type AppendEntriesRequestRecvd struct {
+	AppendEntriesArg
+	Token tracing.TracingToken
+}
+
+type AppendEntriesResponseSent struct {
+	AppendEntriesReply
+	Token tracing.TracingToken
+}
+
+type AppendEntriesResponseRecvd struct {
+	AppendEntriesReply
+	Token tracing.TracingToken
+}
+
+type ForceFollowerLog struct {
+	serverIndex uint8
+	nextIndex   uint64
+	matchIndex  uint64
+}
+
 // State and RPC
 
 type ServerConfig struct {
@@ -161,11 +187,15 @@ type AppendEntriesArg struct {
 	PrevLogTerm  uint32
 	Entries      []Entry
 	LeaderCommit uint64
+
+	Token tracing.TracingToken
 }
 
 type AppendEntriesReply struct {
 	Term    uint32
 	Success bool
+
+	Token tracing.TracingToken
 }
 
 // Log entry definition
@@ -753,7 +783,7 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 		Index:   uint64(len(s.log)),
 	}
 	prevLogEntry := s.log[len(s.log)-1]
-	appendEntryArg := &AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex}
+	appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex, s.trace.GenerateToken()}
 
 	/* Append to my log*/
 	s.log = append(s.log, newEntry)
@@ -765,12 +795,13 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 	/* listen for async AppendEntry responses*/
 	go s.countReplies(currPeers, peerReplies, majorityReplied)
 
-	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", *appendEntryArg)
+	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", appendEntryArg)
 	for _, peer := range s.Peers {
 		if peer.ServerId == s.ServerId {
 			continue
 		}
-		go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
+		s.trace.RecordAction(appendEntryArg)
+		go s.sendAppendEntry(peer, &appendEntryArg, peerReplies)
 	}
 	/* Can return once we have a majority*/
 	<-majorityReplied
@@ -905,11 +936,18 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg) (su
 // Force update the log of a single follower, uses a waitgroup for notifying success
 // Succeeds or retries indefinitely
 func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool) {
+	s.trace.RecordAction(ForceFollowerLog{
+		serverIndex: peerIndex,
+		nextIndex:   s.nextIndex[peerIndex],
+		matchIndex:  s.matchIndex[peerIndex],
+	})
+
 	prevLogEntry := s.log[s.nextIndex[peerIndex]-1]
 	peer := s.Peers[peerIndex]
 	for {
 		// retry until success or failure
-		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex}
+		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex, s.trace.GenerateToken()}
+		s.trace.RecordAction(appendEntryArg)
 		success, err := s.sendAppendEntrySync(peer, &appendEntryArg)
 		if err != nil {
 			<-time.After(10 * time.Second)
@@ -950,6 +988,10 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
 	// FIXME maybe instead of doing this, we can just look at s.isLeader
 	<-s.appendEntriesCanRespond
+
+	s.trace = s.trace.Tracer.ReceiveToken(arg.Token)
+	s.trace.RecordAction(arg)
+
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 
@@ -1027,6 +1069,8 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	}
 	reply.Success = true
 	s.appendEntriesDone <- true
+
+	s.trace.RecordAction(*reply)
 	return nil
 }
 
