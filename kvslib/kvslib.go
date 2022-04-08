@@ -409,8 +409,7 @@ func (d *KVS) sender() {
 
 				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
-				d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
-				putDoneChan := d.leaderClientRPC.Go("Request.Put", putReq, nil, nil)
+				putDoneChan := d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
 				// TODO: this is just to stop keepSending from running into an infinite loop for Milestone 2
 				//       We likely need to add something to the commented out select block below once leader reconfiguration is added
 				<-putDoneChan.Done
