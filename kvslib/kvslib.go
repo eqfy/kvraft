@@ -429,8 +429,8 @@ func (d *KVS) sender() {
 			}
 		} else if req.kind == "GET" {
 			// Send to tail server
-			// d.getTrace = req.tracer.CreateTrace()
-			// d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
+			d.getTrace = req.tracer.CreateTrace()
+			d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
 			var getReq GetReq = GetReq{req.gq.ClientId, req.gq.OpId, req.gq.Key, d.getTrace.GenerateToken()}
 			var getRes GetRes
 
@@ -450,6 +450,8 @@ func (d *KVS) sender() {
 					<-d.leaderReconfiguredDone
 				} else {
 					keepSending = false
+					d.getTrace = req.tracer.ReceiveToken(getRes.Token)
+					d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
 				}
 			}
 		} else if req.kind == "STOP" {
