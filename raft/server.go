@@ -778,7 +778,7 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 		Index:   uint64(len(s.log)),
 	}
 	prevLogEntry := s.log[len(s.log)-1]
-	appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex, s.trace.GenerateToken()}
+	appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex, tracing.TracingToken{}}
 
 	/* Append to my log*/
 	s.log = append(s.log, newEntry)
@@ -835,6 +835,7 @@ func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
 func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool, trace *tracing.Trace) error {
 	trace.RecordAction(AppendEntriesRequestSent(*args))
+	args.Token = trace.GenerateToken()
 
 	// If a connection cannot be established or the rpc call fails due to network issues, just return an error
 	// Once the follower becomes reachable again, the new appendEntry calls and if that fails, the forceUpdateFollowerLog calls
@@ -903,6 +904,8 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 // A synchronous appendEntry that does not retry, used only for forceUpdateFollowerLog
 func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg, trace *tracing.Trace) (success bool, err error) {
 	trace.RecordAction(AppendEntriesRequestSent(*arg))
+	arg.Token = trace.GenerateToken()
+
 	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
 	if err != nil {
 		fmt.Printf("Can't connect to peer id=%d, address=%s, error=%v\n", peer.ServerId, peer.ServerListenAddr, err)
@@ -951,7 +954,7 @@ func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool, trace
 	peer := s.Peers[peerIndex]
 	for {
 		// retry until success or failure
-		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex, s.trace.GenerateToken()}
+		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex, tracing.TracingToken{}}
 		success, err := s.sendAppendEntrySync(peer, &appendEntryArg, trace)
 		if err != nil {
 			<-time.After(10 * time.Second)
@@ -1015,8 +1018,8 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	for i := 1; i < len(arg.Entries); i++ {
 		if arg.Entries[i-1].Index+1 != arg.Entries[i].Index {
 			reply.Success = false
-			reply.Token = trace.GenerateToken()
 			trace.RecordAction(AppendEntriesResponseSent(*reply))
+			reply.Token = trace.GenerateToken()
 			return fmt.Errorf("arg entries should be consecutive, %v", arg.Entries)
 		}
 	}
@@ -1024,22 +1027,23 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	// 1. Reply false if term < currentTerm (§5.1)
 	if arg.Term < s.currentTerm {
 		reply.Success = false
-		reply.Token = trace.GenerateToken()
 		trace.RecordAction(AppendEntriesResponseSent(*reply))
+		reply.Token = trace.GenerateToken()
 		return nil
 	}
 	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
 	if int(arg.PrevLogIndex) >= len(s.log) {
 		// FIXME might not be correct handling of this case
 		reply.Success = false
-		reply.Token = trace.GenerateToken()
 		trace.RecordAction(AppendEntriesResponseSent(*reply))
+		reply.Token = trace.GenerateToken()
 		fmt.Printf("(Follower AppendEntries) error: saw an out of bounds prevLogIndex %v", arg.PrevLogIndex)
 		return nil
 	}
 
 	if s.log[arg.PrevLogIndex].Term != arg.PrevLogTerm {
 		reply.Success = false
+		trace.RecordAction(AppendEntriesResponseSent(*reply))
 		reply.Token = trace.GenerateToken()
 		trace.RecordAction(AppendEntriesResponseSent(*reply))
 		return nil
@@ -1080,8 +1084,8 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 		s.commitIndexUpdated <- true
 	}
 	reply.Success = true
-	reply.Token = trace.GenerateToken()
 	trace.RecordAction(AppendEntriesResponseSent(*reply))
+	reply.Token = trace.GenerateToken()
 	s.appendEntriesDone <- true
 	return nil
 }
