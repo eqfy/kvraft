@@ -139,44 +139,48 @@ type ClientInfo struct {
 	CoordAPIListenAddr string
 }
 
-type GetReq struct {
+type GetRequest struct {
 	ClientId string
 	OpId     uint32
 	Key      string
 	Token    tracing.TracingToken
 }
 
-type GetRes struct {
-	OpId  uint32
-	Key   string
-	Value string
-	Token tracing.TracingToken
-}
-
-type PutReq struct {
+type GetResponse struct {
 	ClientId string
 	OpId     uint32
 	Key      string
 	Value    string
-	// PutListenerAddr string
+	Token    tracing.TracingToken
+}
+
+type PutRequest struct {
+	ClientId string
+	OpId     uint32
+	//NewGetGId       uint64
+	Key   string
+	Value string
+	//PutListenerAddr string
 	Token tracing.TracingToken
 }
 
-type PutRes struct {
-	OpId  uint32
-	Key   string
-	Token tracing.TracingToken
+type PutResponse struct {
+	ClientId string
+	OpId     uint32
+	Key      string
+	Value    string
+	Token    tracing.TracingToken
 }
 
 type Req struct {
-	pq     PutReq
-	gq     GetReq
+	pq     PutRequest
+	gq     GetRequest
 	kind   string // kind is either PUT or GET or STOP
 	tracer *tracing.Tracer
 }
 
 type ServerListener struct {
-	PutResChan chan PutRes
+	PutResChan chan PutResponse
 }
 
 type CoordListener struct {
@@ -315,7 +319,7 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 func (d *KVS) Get(tracer *tracing.Tracer, clientId string, key string) (uint32, error) {
 	atomic.AddUint32(&d.opId, 1)
 	req := Req{
-		gq: GetReq{
+		gq: GetRequest{
 			ClientId: clientId,
 			OpId:     d.opId,
 			Key:      key,
@@ -336,7 +340,7 @@ func (d *KVS) Get(tracer *tracing.Tracer, clientId string, key string) (uint32, 
 // The returned value must be delivered asynchronously via the notify-channel channel returned in the Start call.
 func (d *KVS) Put(tracer *tracing.Tracer, clientId string, key string, value string) (uint32, error) {
 	atomic.AddUint32(&d.opId, 1)
-	req := Req{PutReq{clientId, d.opId, key, value /* d.putListenerIPPort,  */, tracing.TracingToken{}}, GetReq{}, "PUT", tracer}
+	req := Req{PutRequest{clientId, d.opId, key, value, tracing.TracingToken{}}, GetRequest{}, "PUT", tracer}
 	d.reqQueue <- req
 
 	return d.opId, nil
@@ -397,16 +401,16 @@ func (d *KVS) sender() {
 			// Send to leader server
 			d.putTrace = req.tracer.CreateTrace()
 			d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
-			var putReq PutReq = PutReq{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value /* d.putListenerIPPort,  */, d.putTrace.GenerateToken()}
+			var putReq PutRequest = PutRequest{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value, d.putTrace.GenerateToken()}
 
 			// var err error
 			keepSending := true
-			var putRes PutRes
+			var putRes PutResponse
 			for keepSending {
 
 				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
-				d.leaderClientRPC.Go("Request.Put", putReq, nil, nil)
+				d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
 				d.leaderNodeLock.Unlock()
 
 				select {
@@ -429,10 +433,13 @@ func (d *KVS) sender() {
 			}
 		} else if req.kind == "GET" {
 			// Send to tail server
+
 			d.getTrace = req.tracer.CreateTrace()
 			d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
-			var getReq GetReq = GetReq{req.gq.ClientId, req.gq.OpId, req.gq.Key, d.getTrace.GenerateToken()}
-			var getRes GetRes
+			
+			var getReq GetRequest = GetRequest{req.gq.ClientId, req.gq.OpId, req.gq.Key, d.getTrace.GenerateToken()}
+			var getRes GetResponse
+
 
 			var err error
 			keepSending := true
@@ -442,7 +449,7 @@ func (d *KVS) sender() {
 				//d.tailServerLock.Lock()
 				d.leaderNodeLock.Lock()
 				util.PrintfYellow("In Get, after Lock, before call")
-				err = d.leaderClientRPC.Call("Request.Get", getReq, &getRes)
+				err = d.leaderClientRPC.Call("Server.Get", getReq, &getRes)
 				util.PrintfYellow("In Get, after Lock, after call")
 				d.leaderNodeLock.Unlock()
 				util.PrintfYellow("In Get, after unlock")
@@ -464,7 +471,7 @@ func (d *KVS) sender() {
 // Stop Stops the KVS instance from communicating with the KVS and from delivering any results via the notify-channel.
 // This call always succeeds.
 func (d *KVS) Stop() {
-	d.reqQueue <- Req{PutReq{}, GetReq{}, "STOP", nil}
+	d.reqQueue <- Req{PutRequest{}, GetRequest{}, "STOP", nil}
 	d.cnl.ServerFailChan <- ServerFail{ServerPosition: StopServer}
 	<-d.allResRecvd // Wait until all pending request have received response from the server?
 	// d.allResRecvd.Wait() // Wait until all pending request have received response from the server?
@@ -486,7 +493,7 @@ func (d *KVS) Stop() {
 	// TODO: Confirm - is this enough for closing?
 }
 
-func (tpl *ServerListener) PutSuccess(putRes PutRes, isDone *bool) error {
+func (tpl *ServerListener) PutSuccess(putRes PutResponse, isDone *bool) error {
 	// util.PrintfCyan("%s\n", "in PutSuccess")
 	tpl.PutResChan <- putRes
 	// util.PrintfCyan("%s\n", "in PutSuccess")

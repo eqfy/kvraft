@@ -1,6 +1,6 @@
 {
   "ClientID": "1",
-  "CoordIPPort": "127.0.0.1:23001",
+  "CoordIPPort": "127.0.0.1:23009",
   "LocalCoordIPPort": "127.0.0.1:22001",
   "LocalHeadServerIPPort": "127.0.0.1:22011",
   "LocalTailServerIPPort": "127.0.0.1:22021",
