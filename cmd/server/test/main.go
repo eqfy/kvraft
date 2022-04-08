@@ -49,7 +49,7 @@ func main() {
 	}
 	fmt.Printf("here")
 
-	// Test 1: Add Key=1, Value=10
+	// Test 1 Put: Add Key=1 to 10, Value=10 to 100
 	for i := 1; i < 11; i++ {
 		args := &PutRequest{
 			ClientId: config.ClientID,
@@ -60,8 +60,35 @@ func main() {
 		var reply PutResponse
 		err = leaderConn.Call("Server.Put", args, &reply)
 		if err != nil {
-			fmt.Printf("Error %v", err)
+			util.PrintfRed("Test 1 Put Error: %v \n", err)
+		}
+		if args.Key != reply.Key {
+			util.PrintfRed("Test 1 Put Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+		}
+		if args.Value != reply.Value {
+			util.PrintfRed("Test 1 Put Error: Expected Value %s , Actual Value", args.Value, reply.Value)
 		}
 	}
 
+	// Test 1 Get: Get Key=1 to 10, verify values
+	for i := 1; i < 11; i++ {
+		args := &raft.GetRequest{
+			ClientId: config.ClientID,
+			OpId:     uint32(i + 10),
+			Key:      strconv.Itoa(i),
+			Token:    ctrace.GenerateToken(),
+		}
+		var reply raft.GetResponse
+		err = leaderConn.Call("Server.Get", args, &reply)
+		if err != nil {
+			util.PrintfRed("Test 1 Get Error: %v \n", err)
+		}
+		if args.Key != reply.Key {
+			util.PrintfRed("Test 1 Get Error: Expected Key %s , Actual Key", args.Key, reply.Key)
+		}
+		expectedVal := strconv.Itoa(i) + "0"
+		if reply.Value != expectedVal {
+			util.PrintfRed("Test 1 Get Error: Expected value is %s, actual value is %s\n", expectedVal, reply.Value)
+		}
+	}
 }

@@ -45,30 +45,9 @@ type PutRecvd struct {
 	Value    string
 }
 
-type PutFwd struct {
+type PutCommitted struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
-	Key      string
-	Value    string
-}
-
-type InternalPutResponse struct {
-	Token tracing.TracingToken
-}
-
-type PutFwdRecvd struct {
-	ClientId string
-	OpId     uint32
-	GId      uint64
-	Key      string
-	Value    string
-}
-
-type PutResult struct {
-	ClientId string
-	OpId     uint32
-	GId      uint64
 	Key      string
 	Value    string
 }
@@ -95,10 +74,9 @@ type GetRecvd struct {
 	Key      string
 }
 
-type GetResult struct {
+type GetCommitted struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
 	Key      string
 	Value    string
 }
@@ -188,20 +166,6 @@ type AppendEntriesArg struct {
 type AppendEntriesReply struct {
 	Term    uint32
 	Success bool
-}
-
-// RequestVote RPC (Unused)
-type RequestVoteArg struct {
-	term         uint32
-	candidateId  uint8
-	lastLogIndex uint64
-	lastLogTerm  uint64
-}
-
-type RequestVoteReply struct {
-	term        uint32
-	voteGranted bool
-	lastLogTerm uint32
 }
 
 // Log entry definition
@@ -541,12 +505,25 @@ func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 		},
 		done: done,
 	}
+
+	fmt.Printf("(Leader Get): received client command=%v\n", clientCommand)
+
 	s.commandFromClient <- clientCommand
+	// Once done is received, that means the command has been committed
 	command := <-clientCommand.done
+	if command.Key != arg.Key {
+		util.PrintfRed("Get Request: Applied Command key: %s and Client Command key: %s mismatch", command.Key, arg.Key)
+		return errors.New("get request: applied command key and client command key mismatch")
+	}
+	gtrace.RecordAction(GetCommitted{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      command.Key,
+		Value:    command.Val,
+	})
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
-	//TODO replace
 	resp.Key = command.Key
 	resp.Value = command.Val
 	resp.Token = gtrace.GenerateToken()
@@ -576,7 +553,22 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 	fmt.Printf("(Leader Put): received client command=%v\n", clientCommand)
 
 	s.commandFromClient <- clientCommand
+	// Once done is received, that means the command has been committed
 	command := <-clientCommand.done
+	if command.Key != arg.Key {
+		util.PrintfRed("Put Request: Applied Command key: %s and Client Command key: %s mismatch", command.Key, arg.Key)
+		return errors.New("put request: applied command key and client command key mismatch")
+	}
+	if command.Val != arg.Value {
+		util.PrintfRed("Put Request: Applied Command Value: %s and Client Command Value: %s mismatch", command.Val, arg.Value)
+		return errors.New("Put request: applied command value and client command value mismatch")
+	}
+	ptrace.RecordAction(PutCommitted{
+		ClientId: arg.ClientId,
+		OpId:     arg.OpId,
+		Key:      command.Key,
+		Value:    command.Val,
+	})
 
 	resp.ClientId = arg.ClientId
 	resp.OpId = arg.OpId
@@ -641,22 +633,6 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 	}
 }
 
-func (s *Server) raftCandidate(errorChan chan<- error) {}
-
-func (s *Server) raftCandidateLoop(errorChan chan<- error) {
-	/*
-		(ELECTION)
-		- On conversion to candidate, start election:
-		- Increment currentTerm
-		   - Vote for self
-		   - Reset election timer
-		   - Send RequestVote RPCs to all other servers
-		- If votes received from majority of servers: become leader
-		- If AppendEntries RPC received from new leader: convert to follower
-		- If election timeout elapses: start new election
-	*/
-}
-
 func (s *Server) raftLeader(errorChan chan<- error) {
 	for {
 		canRunLeader := <-s.runLeader
@@ -673,9 +649,6 @@ func (s *Server) raftLeader(errorChan chan<- error) {
 
 func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 	/*
-		- Upon election: send initial empty AppendEntries RPCs
-		(heartbeat) to each server; repeat during idle periods to
-		prevent election timeouts (§5.2) (ELECTION)
 		- If command received from client: append entry to local log,
 		respond after entry applied to state machine (§5.3)
 		- If last log index ≥ nextIndex for a follower: send
@@ -707,8 +680,8 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 			return
 		case clientCommand := <-s.commandFromClient:
 			/* need to run in go rountine, or <-s.commitIndexUpdated will block indefinitely...*/
-			go s.leaderHandleCommand(clientCommand)
-		// case <-s.triggerAllFollowerLogUpdate:
+			go s.leaderHandleCommand(clientCommand, errorChan)
+		// case <-s.triggerAllFollowerLogUpdate:  // TODO fully delete this case
 		// 	s.forceUpdateAllFollowerLog()
 		case <-s.existsInterestingN:
 			// TODO
@@ -764,13 +737,14 @@ func (s *Server) doCommit(errorChan chan<- error) {
 		s.lastApplied++
 		_, err := s.applyEntry(s.log[s.lastApplied])
 		if err != nil {
+			// question: should we do a s.lastApplied-- here?
 			errorChan <- err
 			fmt.Printf("error %v\n", err)
 		}
 	}
 }
 
-func (s *Server) leaderHandleCommand(clientCommand ClientCommand) {
+func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan<- error) {
 	/*  - Send AppendEntries in parallel to all peers.
 	- Once majority acks, return clientCommand.done <- clientCommand.command */
 	newEntry := Entry{
@@ -801,12 +775,17 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand) {
 	/* Can return once we have a majority*/
 	<-majorityReplied
 
-	/* Mark entry as committed, and notify server to update kv state*/
+	/* Mark entry as committed, and applyEntry to update kv state*/
 	s.commitIndex += 1
+	command, err := s.applyEntry(newEntry)
+	if err != nil {
+		errorChan <- err
+		util.PrintfRed("error %v\n", err)
+	}
+	s.lastApplied++
 	s.commitIndexUpdated <- true
 	fmt.Printf("(Leader AppendEntries): Successfully replicated entry=%v on majority, commitIndex updated to be %d\n", newEntry, s.commitIndex)
-
-	clientCommand.done <- clientCommand.command
+	clientCommand.done <- command
 }
 
 func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityReplied chan bool) {
@@ -957,7 +936,7 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 		newVal := s.kv[entry.Command.Key]
 		fmt.Printf("(KV STATE): %v\n", s.kv)
 		fmt.Printf("(KV STATE): Applied Entry, Key: %s, Val: %s\n", entry.Command.Key, newVal)
-		return Command{Kind: Get, Key: entry.Command.Key, Val: entry.Command.Val}, nil
+		return Command{Kind: Get, Key: entry.Command.Key, Val: newVal}, nil
 	case Get:
 		// TODO return result of get
 		command := Command{Kind: Get, Key: entry.Command.Key}
@@ -966,7 +945,6 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 	default:
 		return Command{}, fmt.Errorf("unable to apply entry %v", entry)
 	}
-	return Command{}, nil
 }
 
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
