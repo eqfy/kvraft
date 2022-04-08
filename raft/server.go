@@ -691,8 +691,8 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 }
 
 func (s *Server) initLeaderVolatileState() {
-	s.nextIndex = make([]uint64, len(s.Peers))
-	s.matchIndex = make([]uint64, len(s.Peers))
+	s.nextIndex = make([]uint64, len(s.Peers)+1)
+	s.matchIndex = make([]uint64, len(s.Peers)+1)
 	for i := 0; i < len(s.Peers); i++ {
 		s.nextIndex[i] = uint64(len(s.log))
 		s.matchIndex[i] = 0
