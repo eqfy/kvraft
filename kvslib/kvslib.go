@@ -451,7 +451,8 @@ func (d *KVS) sender() {
 				//d.tailServerLock.Lock()
 				d.leaderNodeLock.Lock()
 				util.PrintfYellow("In Get, after Lock, before call")
-				err = d.leaderClientRPC.Call("Server.Get", getReq, &getRes)
+				putDoneChan := d.leaderClientRPC.Go("Server.Get", getReq, &getRes, nil)
+				<-putDoneChan.Done
 				util.PrintfYellow("In Get, after Lock, after call")
 				d.leaderNodeLock.Unlock()
 				util.PrintfYellow("In Get, after unlock")
