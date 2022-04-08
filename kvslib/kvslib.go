@@ -58,15 +58,6 @@ type LeaderResRecvd struct {
 	ServerId uint8
 }
 
-type TailReq struct {
-	ClientId string
-}
-
-type TailResRecvd struct {
-	ClientId string
-	ServerId uint8
-}
-
 // NotifyChannel is used for notifying the client about a mining result.
 type NotifyChannel chan ResultStruct
 
@@ -130,12 +121,12 @@ type KVS struct {
 	// mutex
 	reqLock sync.Mutex
 
-	reqQueue               chan Req
-	tailServerLock         sync.Mutex
+	reqQueue chan Req
+
 	leaderNodeLock         sync.Mutex
 	leaderReconfiguredDone chan bool
-	tailReconfiguredDone   chan bool
-	chCapacity             int
+
+	chCapacity int
 }
 
 type CCoordGetLeaderNodeArg struct {
