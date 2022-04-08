@@ -146,28 +146,6 @@ type GetRequest struct {
 	Token    tracing.TracingToken
 }
 
-<<<<<<< Updated upstream
-type GetRes struct {
-	OpId  uint32
-	Key   string
-	Value string
-	Token tracing.TracingToken
-}
-
-type PutReq struct {
-	ClientId string
-	OpId     uint32
-	Key      string
-	Value    string
-	// PutListenerAddr string
-	Token tracing.TracingToken
-}
-
-type PutRes struct {
-	OpId  uint32
-	Key   string
-	Token tracing.TracingToken
-=======
 type GetResponse struct {
 	ClientId string
 	OpId     uint32
@@ -180,19 +158,18 @@ type PutRequest struct {
 	ClientId string
 	OpId     uint32
 	//NewGetGId       uint64
-	Key             string
-	Value           string
-	PutListenerAddr string
-	Token           tracing.TracingToken
+	Key   string
+	Value string
+	//PutListenerAddr string
+	Token tracing.TracingToken
 }
 
 type PutResponse struct {
 	ClientId string
 	OpId     uint32
-	GId      uint64
 	Key      string
+	Value    string
 	Token    tracing.TracingToken
->>>>>>> Stashed changes
 }
 
 type Req struct {
@@ -363,11 +340,7 @@ func (d *KVS) Get(tracer *tracing.Tracer, clientId string, key string) (uint32, 
 // The returned value must be delivered asynchronously via the notify-channel channel returned in the Start call.
 func (d *KVS) Put(tracer *tracing.Tracer, clientId string, key string, value string) (uint32, error) {
 	atomic.AddUint32(&d.opId, 1)
-<<<<<<< Updated upstream
-	req := Req{PutReq{clientId, d.opId, key, value /* d.putListenerIPPort,  */, tracing.TracingToken{}}, GetReq{}, "PUT", tracer}
-=======
-	req := Req{PutRequest{clientId, d.opId, key, value, d.putListenerIPPort, tracing.TracingToken{}}, GetRequest{}, "PUT", tracer}
->>>>>>> Stashed changes
+	req := Req{PutRequest{clientId, d.opId, key, value, tracing.TracingToken{}}, GetRequest{}, "PUT", tracer}
 	d.reqQueue <- req
 
 	return d.opId, nil
@@ -428,11 +401,7 @@ func (d *KVS) sender() {
 			// Send to leader server
 			d.putTrace = req.tracer.CreateTrace()
 			d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
-<<<<<<< Updated upstream
-			var putReq PutReq = PutReq{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value /* d.putListenerIPPort,  */, d.putTrace.GenerateToken()}
-=======
-			var putReq PutRequest = PutRequest{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value, d.putListenerIPPort, d.putTrace.GenerateToken()}
->>>>>>> Stashed changes
+			var putReq PutRequest = PutRequest{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value, d.putTrace.GenerateToken()}
 
 			// var err error
 			keepSending := true
