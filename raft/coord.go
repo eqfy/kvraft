@@ -1,17 +1,18 @@
 package raft
 
 import (
-	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
-	"cs.ubc.ca/cpsc416/kvraft/kvslib"
 	"errors"
 	"fmt"
-	"github.com/DistributedClocks/tracing"
 	"math"
 	"net"
 	"net/rpc"
 	"os"
 	"sort"
 	"sync"
+
+	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
+	"cs.ubc.ca/cpsc416/kvraft/kvslib"
+	"github.com/DistributedClocks/tracing"
 )
 
 // Actions to be recorded by coord (as part of ctrace, ktrace, and strace):
@@ -556,8 +557,10 @@ func beginLeaderSelection(c *Coord, failedLeaderId uint8, serverFailures map[uin
 			FailedLeaderId: failedLeaderId,
 			Peers:          peers,
 			Term:           c.TermNumber,
-			Token:          c.Trace.GenerateToken(),
+			Token:          tracing.TracingToken{},
 		}
+		c.Trace.RecordAction(leaderFailOverMsg)
+		leaderFailOverMsg.Token = c.Trace.GenerateToken()
 		leaderFailOverack := LeaderFailOverAck{}
 		err = client.Call("Server.NotifyFailOverLeader", leaderFailOverMsg, &leaderFailOverack)
 		if err != nil {

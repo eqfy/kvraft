@@ -81,6 +81,24 @@ type GetCommitted struct {
 	Value    string
 }
 
+type AppendEntriesRequestSent AppendEntriesArg
+type AppendEntriesRequestRecvd AppendEntriesArg
+type AppendEntriesResponseSent AppendEntriesReply
+type AppendEntriesResponseRecvd AppendEntriesReply
+
+type ForceFollowerLog struct {
+	serverIndex uint8
+	nextIndex   uint64
+	matchIndex  uint64
+}
+
+type BecameLeader struct {
+	ServerId uint8
+}
+type BecameFollower struct {
+	ServerId uint8
+}
+
 // State and RPC
 
 type ServerConfig struct {
@@ -161,11 +179,15 @@ type AppendEntriesArg struct {
 	PrevLogTerm  uint32
 	Entries      []Entry
 	LeaderCommit uint64
+
+	Token tracing.TracingToken
 }
 
 type AppendEntriesReply struct {
 	Term    uint32
 	Success bool
+
+	Token tracing.TracingToken
 }
 
 // Log entry definition
@@ -597,6 +619,7 @@ func (s *Server) runRaft() {
 func (s *Server) raftFollower(errorChan chan<- error) {
 	for {
 		canRunFollower := <-s.runFollower
+		s.trace.RecordAction(BecameFollower{s.ServerId})
 
 		// init volatile state
 		s.commitIndex = 0
@@ -636,6 +659,8 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 func (s *Server) raftLeader(errorChan chan<- error) {
 	for {
 		canRunLeader := <-s.runLeader
+		s.trace.RecordAction(BecameLeader{s.ServerId})
+
 		// init volatile state
 		s.commitIndex = 0
 		s.lastApplied = 0
@@ -707,7 +732,7 @@ func (s *Server) sendHeartbeats(stopHeartbeats chan bool) {
 			select {
 			case <-ticker.C:
 				prevLogEntry := s.log[len(s.log)-1]
-				appendEntryArg := &AppendEntriesArg{
+				appendEntryArg := AppendEntriesArg{
 					Term:         s.currentTerm,
 					LeaderId:     s.ServerId,
 					PrevLogIndex: prevLogEntry.Index,
@@ -719,7 +744,7 @@ func (s *Server) sendHeartbeats(stopHeartbeats chan bool) {
 						continue
 					}
 					peerReplies := make(chan bool, len(s.Peers)-1)
-					go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
+					go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace())
 				}
 
 			case <-stopHeartbeats:
@@ -753,7 +778,7 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 		Index:   uint64(len(s.log)),
 	}
 	prevLogEntry := s.log[len(s.log)-1]
-	appendEntryArg := &AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex}
+	appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, []Entry{newEntry}, s.commitIndex, tracing.TracingToken{}}
 
 	/* Append to my log*/
 	s.log = append(s.log, newEntry)
@@ -765,12 +790,12 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 	/* listen for async AppendEntry responses*/
 	go s.countReplies(currPeers, peerReplies, majorityReplied)
 
-	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", *appendEntryArg)
+	fmt.Printf("(Leader AppendEntries): Sending AppendEntries=%v to followers.\n", appendEntryArg)
 	for _, peer := range s.Peers {
 		if peer.ServerId == s.ServerId {
 			continue
 		}
-		go s.sendAppendEntry(peer, appendEntryArg, peerReplies)
+		go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace())
 	}
 	/* Can return once we have a majority*/
 	<-majorityReplied
@@ -808,7 +833,10 @@ func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 }
 
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
-func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool) error {
+func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool, trace *tracing.Trace) error {
+	trace.RecordAction(AppendEntriesRequestSent(*args))
+	args.Token = trace.GenerateToken()
+
 	// If a connection cannot be established or the rpc call fails due to network issues, just return an error
 	// Once the follower becomes reachable again, the new appendEntry calls and if that fails, the forceUpdateFollowerLog calls
 	// should force the follower's log to be consistent (TODO verify this)
@@ -820,21 +848,26 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 	defer peerConn.Close()
 
 	var reply AppendEntriesReply
-	ticker := time.NewTicker(20 * time.Second)
 	done := make(chan *rpc.Call, 1)
 	for {
 		peerConn.Go("Server.AppendEntries", args, &reply, done)
 		select {
 		/* leader retries indefinitely if can't reach follower*/
-		case <-ticker.C:
+		case <-time.After(20 * time.Second):
 			continue
 		case call := <-done:
 			if call.Error == nil {
+				trace = s.tracer.ReceiveToken(reply.Token)
+				trace.RecordAction(AppendEntriesResponseRecvd(reply))
 				res := call.Reply.(*AppendEntriesReply)
 				// fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
 					if res.Term > args.Term {
-						// TODO change to server to follower
+						// change server to follower
+						s.runLeader <- false
+						s.runFollower <- true
+						fmt.Printf("Server %v downgraded to follower\n", s.ServerId)
+						return nil
 					}
 
 					// Follower log is inconsistent with leader, neet to force and wait for follower to update log
@@ -842,7 +875,7 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 					// This is because the current entry has already been added to the leader's log and
 					// followers' AppendEntries will eventually accept everything on leader's log
 					forceUpdateDone := make(chan bool, 1)
-					s.forceUpdateFollowerLog(peer.ServerId, forceUpdateDone)
+					s.forceUpdateFollowerLog(peer.ServerId, forceUpdateDone, trace.Tracer.ReceiveToken(res.Token))
 					<-forceUpdateDone
 
 					peerReplies <- true
@@ -869,7 +902,10 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 }
 
 // A synchronous appendEntry that does not retry, used only for forceUpdateFollowerLog
-func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg) (success bool, err error) {
+func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg, trace *tracing.Trace) (success bool, err error) {
+	trace.RecordAction(AppendEntriesRequestSent(*arg))
+	arg.Token = trace.GenerateToken()
+
 	peerConn, err := rpc.Dial("tcp", peer.ServerListenAddr)
 	if err != nil {
 		fmt.Printf("Can't connect to peer id=%d, address=%s, error=%v\n", peer.ServerId, peer.ServerListenAddr, err)
@@ -884,6 +920,8 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg) (su
 	} else {
 		fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", reply, peer.ServerId)
 	}
+	trace = s.tracer.ReceiveToken(reply.Token)
+	trace.RecordAction(AppendEntriesResponseRecvd(reply))
 	return reply.Success, err
 }
 
@@ -904,20 +942,27 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg) (su
 
 // Force update the log of a single follower, uses a waitgroup for notifying success
 // Succeeds or retries indefinitely
-func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool) {
+func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool, trace *tracing.Trace) {
+	trace.RecordAction(ForceFollowerLog{
+		serverIndex: peerIndex,
+		nextIndex:   s.nextIndex[peerIndex],
+		matchIndex:  s.matchIndex[peerIndex],
+	})
+
+	lastLogEntry := s.log[s.nextIndex[peerIndex]-1]
 	prevLogEntry := s.log[s.nextIndex[peerIndex]-1]
 	peer := s.Peers[peerIndex]
 	for {
 		// retry until success or failure
-		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex}
-		success, err := s.sendAppendEntrySync(peer, &appendEntryArg)
+		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex, tracing.TracingToken{}}
+		success, err := s.sendAppendEntrySync(peer, &appendEntryArg, trace)
 		if err != nil {
 			<-time.After(10 * time.Second)
 			continue
 		}
 		if success {
-			s.nextIndex[peerIndex] = prevLogEntry.Index + 1
-			s.matchIndex[peerIndex] = prevLogEntry.Index
+			s.nextIndex[peerIndex] = lastLogEntry.Index + 1
+			s.matchIndex[peerIndex] = lastLogEntry.Index
 			break
 		} else {
 			s.nextIndex[peerIndex] -= 1
@@ -950,6 +995,10 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
 	// FIXME maybe instead of doing this, we can just look at s.isLeader
 	<-s.appendEntriesCanRespond
+
+	trace := s.trace.Tracer.ReceiveToken(arg.Token)
+	trace.RecordAction(AppendEntriesRequestRecvd(arg))
+
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
 
@@ -969,6 +1018,8 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	for i := 1; i < len(arg.Entries); i++ {
 		if arg.Entries[i-1].Index+1 != arg.Entries[i].Index {
 			reply.Success = false
+			trace.RecordAction(AppendEntriesResponseSent(*reply))
+			reply.Token = trace.GenerateToken()
 			return fmt.Errorf("arg entries should be consecutive, %v", arg.Entries)
 		}
 	}
@@ -976,18 +1027,25 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	// 1. Reply false if term < currentTerm (§5.1)
 	if arg.Term < s.currentTerm {
 		reply.Success = false
+		trace.RecordAction(AppendEntriesResponseSent(*reply))
+		reply.Token = trace.GenerateToken()
 		return nil
 	}
 	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
 	if int(arg.PrevLogIndex) >= len(s.log) {
 		// FIXME might not be correct handling of this case
 		reply.Success = false
+		trace.RecordAction(AppendEntriesResponseSent(*reply))
+		reply.Token = trace.GenerateToken()
 		fmt.Printf("(Follower AppendEntries) error: saw an out of bounds prevLogIndex %v", arg.PrevLogIndex)
 		return nil
 	}
 
 	if s.log[arg.PrevLogIndex].Term != arg.PrevLogTerm {
 		reply.Success = false
+		trace.RecordAction(AppendEntriesResponseSent(*reply))
+		reply.Token = trace.GenerateToken()
+		trace.RecordAction(AppendEntriesResponseSent(*reply))
 		return nil
 	}
 
@@ -1026,6 +1084,8 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 		s.commitIndexUpdated <- true
 	}
 	reply.Success = true
+	trace.RecordAction(AppendEntriesResponseSent(*reply))
+	reply.Token = trace.GenerateToken()
 	s.appendEntriesDone <- true
 	return nil
 }
