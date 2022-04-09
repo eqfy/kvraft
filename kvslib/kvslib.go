@@ -413,17 +413,22 @@ func (d *KVS) sender() {
 				// TODO: this is just to stop keepSending from running into an infinite loop for Milestone 2
 				//       We likely need to add something to the commented out select block below once leader reconfiguration is added
 				<-putDoneChan.Done
-				keepSending = false
+				//keepSending = false
 				d.leaderNodeLock.Unlock()
 
-				// select {
-				// // case putRes = <-d.tpl.PutResChan:
-				// // 	keepSending = false
-				// case <-d.leaderReconfiguredDone:
+				//select {
+				//case putRes = <-d.tpl.PutResChan:
+				//	keepSending = false
+				//case <-d.leaderReconfiguredDone:
+				// Send again
+				//case <-time.After(2 * time.Second): // set a timeout of 2 second
 				// 	// Send again
-				// case <-time.After(2 * time.Second): // set a timeout of 2 second
-				// 	// Send again
-				// }
+				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
+					<-d.leaderReconfiguredDone
+				} else {
+					keepSending = false
+				}
+
 			}
 
 			// waits until the tail server gets back with put success
@@ -443,7 +448,7 @@ func (d *KVS) sender() {
 			var getReq GetRequest = GetRequest{req.gq.ClientId, req.gq.OpId, req.gq.Key, d.getTrace.GenerateToken()}
 			var getRes GetResponse
 
-			var err error
+			//var err error
 			keepSending := true
 			util.PrintfYellow("In Get, before keepSending loop")
 			for keepSending {
@@ -456,7 +461,7 @@ func (d *KVS) sender() {
 				util.PrintfYellow("In Get, after Lock, after call")
 				d.leaderNodeLock.Unlock()
 				util.PrintfYellow("In Get, after unlock")
-				if err != nil { // will now wait for head server to have finished reconfiguring
+				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
 					<-d.leaderReconfiguredDone
 				} else {
 					keepSending = false
@@ -507,6 +512,7 @@ func (tpl *ServerListener) PutSuccess(putRes PutResponse, isDone *bool) error {
 func (cnl *CoordListener) ChangeLeaderNode(newServerIPPort string, isDone *bool) error {
 	cnl.ServerFailChan <- ServerFail{Leader, newServerIPPort}
 	*isDone = true
+	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPPort)
 	return nil
 }
 

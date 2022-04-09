@@ -78,6 +78,7 @@ type Coord struct {
 	ClientContactAddr        string
 	TermNumber               uint8
 	Leader                   ServerInfo
+	ClientIpList             map[string]bool
 }
 
 type ServerInfo struct {
@@ -176,6 +177,8 @@ func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg
 		ServerIpPort: c.coord.Leader.ClientListenAddr,
 		Token:        ktracer.GenerateToken(),
 	}
+
+	c.coord.ClientIpList[request.ClientInfo.CoordAPIListenAddr] = true
 	return nil
 }
 
@@ -201,6 +204,21 @@ func (c *Coord) RequestServerJoin(serverInfo ServerInfo, reply *JoinRecvd) error
 
 func NewCoord() *Coord {
 	return &Coord{}
+}
+
+func notifyClientNewLeader(c *Coord) {
+	for clientAddr, _ := range c.ClientIpList {
+		client, err := rpc.Dial("tcp", clientAddr)
+		if err != nil {
+			fmt.Println("WARNING Could not contact client during new leader notification.")
+		} else {
+			isDone := false
+			err = client.Call("CoordListener.ChangeLeaderNode", c.Leader.ClientListenAddr, &isDone)
+			if err != nil {
+				fmt.Printf(" WARNING Error received when waiting for ack from client during new Leader notificationl %v\n", err.Error())
+			}
+		}
+	}
 }
 
 func startListeningForServers(serverAPIListenAddr string, c *Coord) error {
@@ -293,6 +311,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	c.ServerClusterView = make(map[uint8]ServerInfo)
 	c.Tracer = ctracer
 	c.TermNumber = 1
+	c.ClientIpList = make(map[string]bool, 0)
 
 	if err := startListeningForServers(serverAPIListenAddr, c); err != nil {
 		return err
@@ -389,6 +408,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 					fmt.Printf("FATAL could not successfully complete the leader selection protocol: %v\nExiting", err.Error())
 					os.Exit(2)
 				}
+				notifyClientNewLeader(c)
 				printServerClusterView(c)
 				fmt.Printf("New leader: %v\n", c.Leader.ServerId)
 			} else {
