@@ -143,6 +143,8 @@ type LeaderFailOverAck struct {
 // TerminateNotification Let the servers know that kvs can
 // no longer stay functional when consensus requirements
 // are unmet
+
+type Termination struct{}
 type TerminateNotification struct {
 	Token tracing.TracingToken
 }
@@ -450,6 +452,7 @@ func verifyQuorum(c *Coord, failedServersMap map[uint8]bool) error {
 	quorum := int(math.Floor(float64(c.NumServers/2))) + 1
 	if len(failedServersMap) >= quorum {
 		fmt.Println("FATAL: QUORUM OF SERVERS UNAVAILABLE. SHUTTING DOWN.")
+		c.Trace.RecordAction(Termination{})
 
 		for _, server := range c.ServerClusterView {
 			if client, err := rpc.Dial("tcp", server.CoordListenAddr); err != nil {
@@ -581,10 +584,11 @@ func beginLeaderSelection(c *Coord, failedLeaderId uint8, serverFailures map[uin
 			fmt.Println("Retrying Leader Selection")
 			continue
 		} else {
-			// TODO Handle tracing
 			c.Trace = c.Trace.Tracer.ReceiveToken(leaderFailOverack.Token)
 			c.Trace.RecordAction(LeaderReconfigDone{newLeader.ServerId})
 			c.Leader = newLeader
+
+			// TODO notify client about failure??? or client calls GetLeaderNode()
 			return nil
 		}
 	}
