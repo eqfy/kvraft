@@ -6,7 +6,6 @@ import (
 	"net/rpc"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"cs.ubc.ca/cpsc416/kvraft/util"
 
@@ -410,17 +409,21 @@ func (d *KVS) sender() {
 
 				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
-				d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
+				putDoneChan := d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
+				// TODO: this is just to stop keepSending from running into an infinite loop for Milestone 2
+				//       We likely need to add something to the commented out select block below once leader reconfiguration is added
+				<-putDoneChan.Done
+				keepSending = false
 				d.leaderNodeLock.Unlock()
 
-				select {
-				// case putRes = <-d.tpl.PutResChan:
-				// 	keepSending = false
-				case <-d.leaderReconfiguredDone:
-					// Send again
-				case <-time.After(2 * time.Second): // set a timeout of 2 second
-					// Send again
-				}
+				// select {
+				// // case putRes = <-d.tpl.PutResChan:
+				// // 	keepSending = false
+				// case <-d.leaderReconfiguredDone:
+				// 	// Send again
+				// case <-time.After(2 * time.Second): // set a timeout of 2 second
+				// 	// Send again
+				// }
 			}
 
 			// waits until the tail server gets back with put success
@@ -433,8 +436,10 @@ func (d *KVS) sender() {
 			}
 		} else if req.kind == "GET" {
 			// Send to tail server
-			// d.getTrace = req.tracer.CreateTrace()
-			// d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
+
+			d.getTrace = req.tracer.CreateTrace()
+			d.getTrace.RecordAction(Get{req.gq.ClientId, req.gq.OpId, req.gq.Key})
+
 			var getReq GetRequest = GetRequest{req.gq.ClientId, req.gq.OpId, req.gq.Key, d.getTrace.GenerateToken()}
 			var getRes GetResponse
 
@@ -446,7 +451,8 @@ func (d *KVS) sender() {
 				//d.tailServerLock.Lock()
 				d.leaderNodeLock.Lock()
 				util.PrintfYellow("In Get, after Lock, before call")
-				err = d.leaderClientRPC.Call("Server.Get", getReq, &getRes)
+				putDoneChan := d.leaderClientRPC.Go("Server.Get", getReq, &getRes, nil)
+				<-putDoneChan.Done
 				util.PrintfYellow("In Get, after Lock, after call")
 				d.leaderNodeLock.Unlock()
 				util.PrintfYellow("In Get, after unlock")
@@ -454,6 +460,8 @@ func (d *KVS) sender() {
 					<-d.leaderReconfiguredDone
 				} else {
 					keepSending = false
+					d.getTrace = req.tracer.ReceiveToken(getRes.Token)
+					d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
 				}
 			}
 		} else if req.kind == "STOP" {
