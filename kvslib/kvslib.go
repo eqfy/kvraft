@@ -512,6 +512,7 @@ func (tpl *ServerListener) PutSuccess(putRes PutResponse, isDone *bool) error {
 func (cnl *CoordListener) ChangeLeaderNode(newServerIPPort string, isDone *bool) error {
 	cnl.ServerFailChan <- ServerFail{Leader, newServerIPPort}
 	*isDone = true
+	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPPort)
 	return nil
 }
 

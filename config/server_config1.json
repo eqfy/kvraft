@@ -1,6 +1,6 @@
 {
   "ServerID": 1,
-  "CoordAddr": "127.0.0.1:23003",
+  "CoordAddr": "127.0.0.1:23002",
   "ServerAddr": "127.0.0.1:21001",
   "ServerServerAddr": "127.0.0.1:21011",
   "ServerListenAddr": "127.0.0.1:21021",

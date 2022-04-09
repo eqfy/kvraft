@@ -211,12 +211,12 @@ func notifyClientNewLeader(c *Coord) {
 		client, err := rpc.Dial("tcp", clientAddr)
 		if err != nil {
 			fmt.Println("WARNING Could not contact client during new leader notification.")
-		}
-
-		isDone := false
-		err = client.Call("CoordListener.ChangeLeaderNode", c.Leader.ClientListenAddr, &isDone)
-		if err != nil {
-			fmt.Printf(" WARNING Error received when waiting for ack from client during new Leader notificationl %v\n", err.Error())
+		} else {
+			isDone := false
+			err = client.Call("CoordListener.ChangeLeaderNode", c.Leader.ClientListenAddr, &isDone)
+			if err != nil {
+				fmt.Printf(" WARNING Error received when waiting for ack from client during new Leader notificationl %v\n", err.Error())
+			}
 		}
 	}
 }
