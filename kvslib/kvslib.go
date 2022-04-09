@@ -412,7 +412,13 @@ func (d *KVS) sender() {
 				putDoneChan := d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
 				// TODO: this is just to stop keepSending from running into an infinite loop for Milestone 2
 				//       We likely need to add something to the commented out select block below once leader reconfiguration is added
-				<-putDoneChan.Done
+				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
+					<-d.leaderReconfiguredDone
+				} else {
+					<-putDoneChan.Done
+					keepSending = false
+				}
+
 				//keepSending = false
 				d.leaderNodeLock.Unlock()
 
@@ -423,11 +429,6 @@ func (d *KVS) sender() {
 				// Send again
 				//case <-time.After(2 * time.Second): // set a timeout of 2 second
 				// 	// Send again
-				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
-					<-d.leaderReconfiguredDone
-				} else {
-					keepSending = false
-				}
 
 			}
 
@@ -457,17 +458,19 @@ func (d *KVS) sender() {
 				d.leaderNodeLock.Lock()
 				util.PrintfYellow("In Get, after Lock, before call")
 				putDoneChan := d.leaderClientRPC.Go("Server.Get", getReq, &getRes, nil)
-				<-putDoneChan.Done
-				util.PrintfYellow("In Get, after Lock, after call")
-				d.leaderNodeLock.Unlock()
-				util.PrintfYellow("In Get, after unlock")
 				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
 					<-d.leaderReconfiguredDone
 				} else {
+					<-putDoneChan.Done
 					keepSending = false
 					d.getTrace = req.tracer.ReceiveToken(getRes.Token)
 					d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
 				}
+
+				util.PrintfYellow("In Get, after Lock, after call")
+				d.leaderNodeLock.Unlock()
+				util.PrintfYellow("In Get, after unlock")
+
 			}
 		} else if req.kind == "STOP" {
 			d.allResRecvd <- true
