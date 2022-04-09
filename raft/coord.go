@@ -200,6 +200,21 @@ func NewCoord() *Coord {
 	return &Coord{}
 }
 
+func notifyClientNewLeader(c *Coord) {
+	for clientAddr, _ := range c.ClientIpList {
+		client, err := rpc.Dial("tcp", clientAddr)
+		if err != nil {
+			fmt.Println("WARNING Could not contact client during new leader notification.")
+		}
+
+		isDone := false
+		err = client.Call("CoordListener.ChangeLeaderNode", c.Leader.ClientListenAddr, &isDone)
+		if err != nil {
+			fmt.Printf(" WARNING Error received when waiting for ack from client during new Leader notificationl %v\n", err.Error())
+		}
+	}
+}
+
 func startListeningForServers(serverAPIListenAddr string, c *Coord) error {
 	serverListenAddr, err := net.ResolveTCPAddr("tcp", serverAPIListenAddr)
 	if err != nil {
@@ -387,6 +402,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 					fmt.Printf("FATAL could not successfully complete the leader selection protocol: %v\nExiting", err.Error())
 					os.Exit(2)
 				}
+				notifyClientNewLeader(c)
 				printServerClusterView(c)
 				fmt.Printf("New leader: %v\n", c.Leader.ServerId)
 			} else {
