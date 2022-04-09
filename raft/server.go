@@ -716,8 +716,8 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 }
 
 func (s *Server) initLeaderVolatileState() {
-	s.nextIndex = make([]uint64, len(s.Peers)+1)
-	s.matchIndex = make([]uint64, len(s.Peers)+1)
+	s.nextIndex = make([]uint64, len(s.Peers))
+	s.matchIndex = make([]uint64, len(s.Peers))
 	for i := 0; i < len(s.Peers); i++ {
 		s.nextIndex[i] = uint64(len(s.log))
 		s.matchIndex[i] = 0
@@ -883,11 +883,11 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				} else {
 					if len(args.Entries) > 0 {
 						lastArgEntrySentIndex := args.Entries[len(args.Entries)-1].Index
-						if s.matchIndex[peer.ServerId] < lastArgEntrySentIndex {
-							s.matchIndex[peer.ServerId] = lastArgEntrySentIndex
+						if s.matchIndex[peer.ServerId-1] < lastArgEntrySentIndex {
+							s.matchIndex[peer.ServerId-1] = lastArgEntrySentIndex
 						}
-						if s.nextIndex[peer.ServerId] < lastArgEntrySentIndex+1 {
-							s.nextIndex[peer.ServerId] = lastArgEntrySentIndex + 1
+						if s.nextIndex[peer.ServerId-1] < lastArgEntrySentIndex+1 {
+							s.nextIndex[peer.ServerId-1] = lastArgEntrySentIndex + 1
 						}
 					}
 					peerReplies <- true
@@ -925,48 +925,33 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg, tra
 	return reply.Success, err
 }
 
-// Force all known peers to adopt consistent logs
-// func (s *Server) forceUpdateAllFollowerLog() {
-// 	forceUpdateWg := sync.WaitGroup{}
-// 	for _, peer := range s.Peers {
-// 		peerId := peer.ServerId
-// 		if peerId == s.ServerId {
-// 			continue
-// 		}
-// 		if s.matchIndex[peerId] >= s.nextIndex[peerId] {
-// 			go s.forceUpdateFollowerLog(peerId, forceUpdateWg)
-// 		}
-// 	}
-// 	forceUpdateWg.Wait()
-// }
-
 // Force update the log of a single follower, uses a waitgroup for notifying success
 // Succeeds or retries indefinitely
 func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool, trace *tracing.Trace) {
 	trace.RecordAction(ForceFollowerLog{
 		serverIndex: peerIndex,
-		nextIndex:   s.nextIndex[peerIndex],
-		matchIndex:  s.matchIndex[peerIndex],
+		nextIndex:   s.nextIndex[peerIndex-1],
+		matchIndex:  s.matchIndex[peerIndex-1],
 	})
 
-	lastLogEntry := s.log[s.nextIndex[peerIndex]-1]
-	prevLogEntry := s.log[s.nextIndex[peerIndex]-1]
-	peer := s.Peers[peerIndex]
+	lastLogEntry := s.log[s.nextIndex[peerIndex-1]-1]
+	prevLogEntry := s.log[s.nextIndex[peerIndex-1]-1]
+	peer := s.Peers[peerIndex-1]
 	for {
 		// retry until success or failure
-		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex]:], s.commitIndex, tracing.TracingToken{}}
+		appendEntryArg := AppendEntriesArg{s.currentTerm, s.ServerId, prevLogEntry.Index, prevLogEntry.Term, s.log[s.nextIndex[peerIndex-1]:], s.commitIndex, tracing.TracingToken{}}
 		success, err := s.sendAppendEntrySync(peer, &appendEntryArg, trace)
 		if err != nil {
 			<-time.After(10 * time.Second)
 			continue
 		}
 		if success {
-			s.nextIndex[peerIndex] = lastLogEntry.Index + 1
-			s.matchIndex[peerIndex] = lastLogEntry.Index
+			s.nextIndex[peerIndex-1] = lastLogEntry.Index + 1
+			s.matchIndex[peerIndex-1] = lastLogEntry.Index
 			break
 		} else {
-			s.nextIndex[peerIndex] -= 1
-			prevLogEntry = s.log[s.nextIndex[peerIndex]-1]
+			s.nextIndex[peerIndex-1] -= 1
+			prevLogEntry = s.log[s.nextIndex[peerIndex-1]-1]
 		}
 	}
 	done <- true
