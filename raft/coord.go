@@ -1,17 +1,18 @@
 package raft
 
 import (
-	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
-	"cs.ubc.ca/cpsc416/kvraft/kvslib"
 	"errors"
 	"fmt"
-	"github.com/DistributedClocks/tracing"
 	"math"
 	"net"
 	"net/rpc"
 	"os"
 	"sort"
 	"sync"
+
+	fchecker "cs.ubc.ca/cpsc416/kvraft/fcheck"
+	"cs.ubc.ca/cpsc416/kvraft/kvslib"
+	"github.com/DistributedClocks/tracing"
 )
 
 // Actions to be recorded by coord (as part of ctrace, ktrace, and strace):
@@ -73,6 +74,7 @@ type Coord struct {
 	ClientContactAddr        string
 	TermNumber               uint8
 	Leader                   ServerInfo
+	ClientIpList             []string
 }
 
 type ServerInfo struct {
@@ -169,6 +171,8 @@ func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg
 		ServerIpPort: c.coord.Leader.ClientListenAddr,
 		Token:        ktracer.GenerateToken(),
 	}
+
+	c.coord.ClientIpList = append(c.coord.ClientIpList, request.ClientInfo.CoordAPIListenAddr)
 	return nil
 }
 
@@ -286,6 +290,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	c.ServerClusterView = make(map[uint8]ServerInfo)
 	c.Tracer = ctracer
 	c.TermNumber = 1
+	c.ClientIpList = make([]string, 0)
 
 	if err := startListeningForServers(serverAPIListenAddr, c); err != nil {
 		return err
