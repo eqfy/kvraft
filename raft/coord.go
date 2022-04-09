@@ -74,7 +74,7 @@ type Coord struct {
 	ClientContactAddr        string
 	TermNumber               uint8
 	Leader                   ServerInfo
-	ClientIpList             []string
+	ClientIpList             map[string]bool
 }
 
 type ServerInfo struct {
@@ -172,7 +172,7 @@ func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg
 		Token:        ktracer.GenerateToken(),
 	}
 
-	c.coord.ClientIpList = append(c.coord.ClientIpList, request.ClientInfo.CoordAPIListenAddr)
+	c.coord.ClientIpList[request.ClientInfo.CoordAPIListenAddr] = true
 	return nil
 }
 
@@ -290,7 +290,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 	c.ServerClusterView = make(map[uint8]ServerInfo)
 	c.Tracer = ctracer
 	c.TermNumber = 1
-	c.ClientIpList = make([]string, 0)
+	c.ClientIpList = make(map[string]bool, 0)
 
 	if err := startListeningForServers(serverAPIListenAddr, c); err != nil {
 		return err
