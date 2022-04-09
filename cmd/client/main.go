@@ -44,19 +44,19 @@ func main() {
 
 	op, err = client.Get(tracer, clientId, "key2")
 
-	// time.Sleep(5 * time.Second)
+	// // time.Sleep(5 * time.Second)
 
-	op, err = client.Put(tracer, clientId, "key2", "value1")
-	util.CheckErr(err, "Error putting value %v, opId: %v\b", err, op)
+	// op, err = client.Put(tracer, clientId, "key2", "value1")
+	// util.CheckErr(err, "Error putting value %v, opId: %v\b", err, op)
 
-	op, err = client.Get(tracer, clientId, "key1")
+	// op, err = client.Get(tracer, clientId, "key1")
 
-	op, err = client.Get(tracer, clientId, "key2")
+	// op, err = client.Get(tracer, clientId, "key2")
 
-	for i := 0; i < 100; i++ {
-		client.Put(tracer, clientId, fmt.Sprint("k", i), fmt.Sprint("val", i))
-		client.Get(tracer, clientId, fmt.Sprint("k", i))
-	}
+	// for i := 0; i < 100; i++ {
+	// 	client.Put(tracer, clientId, fmt.Sprint("k", i), fmt.Sprint("val", i))
+	// 	client.Get(tracer, clientId, fmt.Sprint("k", i))
+	// }
 	// for i := 0; i < 1000; i++ {
 	// 	client.Get(tracer, clientId, fmt.Sprint("k", i))
 	// }
