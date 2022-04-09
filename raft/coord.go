@@ -36,11 +36,11 @@ type NewChain struct {
 type AllServersJoined struct {
 }
 
-type HeadReqRecvd struct {
+type LeaderReqRecvd struct {
 	ClientId string
 }
 
-type HeadRes struct {
+type LeaderRes struct {
 	ClientId string
 	ServerId uint8
 }
@@ -50,6 +50,10 @@ type ServerJoiningRecvd struct {
 }
 
 type ServerJoinedRecvd struct {
+	ServerId uint8
+}
+
+type LeaderReconfigDone struct {
 	ServerId uint8
 }
 
@@ -160,10 +164,10 @@ func (c *ClientLearnServers) GetLeaderNode(request kvslib.CCoordGetLeaderNodeArg
 	}
 
 	ktracer := c.coord.Tracer.ReceiveToken(request.Token)
-	ktracer.RecordAction(HeadReqRecvd{ClientId: request.ClientId})
+	ktracer.RecordAction(LeaderReqRecvd{ClientId: request.ClientId})
 
 	serverId := c.coord.Leader.ServerId
-	ktracer.RecordAction(HeadRes{ClientId: request.ClientId, ServerId: serverId})
+	ktracer.RecordAction(LeaderRes{ClientId: request.ClientId, ServerId: serverId})
 
 	*reply = kvslib.CCoordGetLeaderNodeReply{
 		ServerId:     serverId,
@@ -578,6 +582,8 @@ func beginLeaderSelection(c *Coord, failedLeaderId uint8, serverFailures map[uin
 			continue
 		} else {
 			// TODO Handle tracing
+			c.Trace = c.Trace.Tracer.ReceiveToken(leaderFailOverack.Token)
+			c.Trace.RecordAction(LeaderReconfigDone{newLeader.ServerId})
 			c.Leader = newLeader
 			return nil
 		}
