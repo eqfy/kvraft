@@ -480,7 +480,9 @@ func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *Leader
 
 	cTrace := s.tracer.ReceiveToken(notification.Token)
 	cTrace.RecordAction(ServerFailRecvd{FailedServerId: notification.FailedLeaderId})
-	s.Peers = notification.Peers
+	// We probably don't want to update peer info
+	// This way, we can run AppendEntries calls indefinitely until the server comes back up or the task finishes
+	// s.Peers = notification.Peers
 	s.currentTerm = uint32(notification.Term)
 	s.isLeader = true
 	s.runLeader <- true
