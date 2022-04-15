@@ -55,7 +55,7 @@ type LeaderResRecvd struct {
 	ServerId uint8
 }
 
-type LeaderNodeUpdated struct {
+type LeaderNodeUpdateRecvd struct {
 	ClientId string
 	ServerId uint8
 }
@@ -566,7 +566,7 @@ func (tpl *ServerListener) PutSuccess(putRes PutResponse, isDone *bool) error {
 
 func (d *KVS) ChangeLeaderNode(newServerIPData NewLeaderStruct, reply *NewLeaderChangedStruct) error {
 	newTrace := d.kTracer.ReceiveToken(newServerIPData.token)
-	newTrace.RecordAction(LeaderNodeUpdated{
+	newTrace.RecordAction(LeaderNodeUpdateRecvd{
 		ClientId: d.clientId,
 		ServerId: newServerIPData.serverNum,
 	})
