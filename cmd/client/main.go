@@ -53,10 +53,10 @@ func main() {
 
 	// op, err = client.Get(tracer, clientId, "key2")
 
-	// for i := 0; i < 100; i++ {
-	// 	client.Put(tracer, clientId, fmt.Sprint("k", i), fmt.Sprint("val", i))
-	// 	client.Get(tracer, clientId, fmt.Sprint("k", i))
-	// }
+	for i := 0; i < 20; i++ {
+		client.Put(tracer, clientId, fmt.Sprint("k", i), fmt.Sprint("val", i))
+		// client.Get(tracer, clientId, fmt.Sprint("k", i))
+	}
 	// for i := 0; i < 1000; i++ {
 	// 	client.Get(tracer, clientId, fmt.Sprint("k", i))
 	// }
