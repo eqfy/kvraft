@@ -55,6 +55,11 @@ type LeaderResRecvd struct {
 	ServerId uint8
 }
 
+type LeaderNodeUpdated struct {
+	ClientId string
+	ServerId uint8
+}
+
 // NotifyChannel is used for notifying the client about a mining result.
 type NotifyChannel chan ResultStruct
 
@@ -208,6 +213,16 @@ type AddCNLReq struct {
 	CoordListenerIpPort string
 }
 
+type NewLeaderStruct struct {
+	ip        string
+	serverNum uint8
+	token     tracing.TracingToken
+}
+
+type NewLeaderChangedStruct struct {
+	token tracing.TracingToken
+}
+
 func NewKVS() *KVS {
 	return &KVS{
 		notifyCh: nil,
@@ -304,10 +319,9 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 
 	d.notifyCh = make(NotifyChannel, chCapacity)
 	d.opId = 0
-	d.leaderReconfiguredDone = make(chan bool, 256)
 	go coordRPCListener.Accept(coordTCPListener)
 	go d.sender()
-	//go d.handleFailure()
+	go d.handleFailure()
 	return d.notifyCh, nil
 }
 
@@ -347,32 +361,32 @@ func (d *KVS) Put(tracer *tracing.Tracer, clientId string, key string, value str
 
 }
 
-/*func (d *KVS) handleFailure() {
-d.leaderReconfiguredDone = make(chan bool, 256) // TODO maybe a bigger buffer is needed
-for {
-	serverFailure := <-d.cnl.ServerFailChan
-	if serverFailure.ServerPosition == Leader {
-		d.leaderNodeLock.Lock()
-		/* Close old client connection to HS */
-/*d.leaderNodeIPPort = serverFailure.NewServerIpPort
-hsClientRPCCloseErr := d.leaderClientRPC.Close()
-checkWarning(hsClientRPCCloseErr, "error closing the RPC client for leader server(HS) upon receiving failed HS msg in handlGet: ")
+func (d *KVS) handleFailure() {
+	d.leaderReconfiguredDone = make(chan bool, 256) // TODO maybe a bigger buffer is needed
+	for {
+		serverFailure := <-d.cnl.ServerFailChan
+		if serverFailure.ServerPosition == Leader {
+			d.leaderNodeLock.Lock()
+			/* Close old client connection to HS */
+			d.leaderNodeIPPort = serverFailure.NewServerIpPort
+			hsClientRPCCloseErr := d.leaderClientRPC.Close()
+			checkWarning(hsClientRPCCloseErr, "error closing the RPC client for leader server(HS) upon receiving failed HS msg in handlGet: ")
 
-/* Get new Leader server from coord */
-/*d.ktrace.RecordAction(LeaderReq{d.clientId})
-var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
-var leaderNodeRes CCoordGetLeaderNodeReply
-hsReqErr := d.coordClientRPC.Call("ClientLearnServers.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
-if hsReqErr != nil {
-	checkWarning(hsReqErr, "error requesting leader server from coord: ")
-	continue
-}
-d.ktrace = d.kTracer.ReceiveToken(leaderNodeRes.Token)
-d.ktrace.RecordAction(LeaderResRecvd{d.clientId, leaderNodeRes.ServerId})
-d.leaderNodeIPPort = leaderNodeRes.ServerIpPort
+			/* Get new Leader server from coord */
+			d.ktrace.RecordAction(LeaderReq{d.clientId})
+			var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
+			var leaderNodeRes CCoordGetLeaderNodeReply
+			hsReqErr := d.coordClientRPC.Call("ClientLearnServers.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
+			if hsReqErr != nil {
+				checkWarning(hsReqErr, "error requesting leader server from coord: ")
+				continue
+			}
+			d.ktrace = d.kTracer.ReceiveToken(leaderNodeRes.Token)
+			d.ktrace.RecordAction(LeaderResRecvd{d.clientId, leaderNodeRes.ServerId})
+			d.leaderNodeIPPort = leaderNodeRes.ServerIpPort
 
-/* Start new client connection to HS */
-/*newHSAddr, newHSAddrErr := net.ResolveTCPAddr("tcp", d.leaderNodeIPPort)
+			/* Start new client connection to HS */
+			newHSAddr, newHSAddrErr := net.ResolveTCPAddr("tcp", d.leaderNodeIPPort)
 			checkWarning(newHSAddrErr, "error resolving newHSAddr upon receiving failed HS msg in handlGet:")
 			newLNClientTCP, newLNClientTCPErr := net.DialTCP("tcp", d.lnLocalTCPAddr, newHSAddr)
 			if newLNClientTCPErr != nil {
@@ -382,16 +396,16 @@ d.leaderNodeIPPort = leaderNodeRes.ServerIpPort
 			newLNClientTCP.SetLinger(0)
 			d.leaderClientRPC = rpc.NewClient(newLNClientTCP)
 
-			util.PrintfYellow("Before leaderReconfiguredDone")
+			util.PrintfYellow("%s\n", "Before leaderReconfiguredDone")
 			d.leaderReconfiguredDone <- true
-			util.PrintfYellow("After leaderReconfiguredDone")
+			util.PrintfYellow("%s\n", "After leaderReconfiguredDone")
 			d.leaderNodeLock.Unlock()
 		} else if serverFailure.ServerPosition == StopServer {
 			d.allErrRecvd <- true
 			return
 		}
 	}
-}*/
+}
 
 func (d *KVS) sender() {
 	// queue of operations
@@ -413,23 +427,36 @@ func (d *KVS) sender() {
 				putDoneChan := d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
 				// TODO: this is just to stop keepSending from running into an infinite loop for Milestone 2
 				//       We likely need to add something to the commented out select block below once leader reconfiguration is added
-				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
-					<-d.leaderReconfiguredDone
-				} else {
-					<-putDoneChan.Done
-					keepSending = false
+				// if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
+				// 	<-d.leaderReconfiguredDone
+				// } else {
+				// 	// <-putDoneChan.Done
+				// 	// keepSending = false
+				// 	select {
+				// 		case <-putDoneChan.Done:
+				// 			keepSending = false
+				// 		case <-d.leaderReconfiguredDone:
+				// 		// Send again
+				// 		// case <-time.After(2 * time.Second): // set a timeout of 2 second
+				// 			// Send again
+				// 	}
+				// }
+				select {
+				case <-putDoneChan.Done:
+					if putDoneChan.Error != nil {
+						// resend request if remote received an error
+						util.PrintfPurple("%s%s\n", "Error received by kvslib, from Leader: ", putDoneChan.Error.Error())
+					} else {
+						keepSending = false
+					}
+				case <-d.leaderReconfiguredDone:
+					// Send again
+					// case <-time.After(2 * time.Second): // set a timeout of 2 second
+					// Send again
 				}
 
 				//keepSending = false
 				d.leaderNodeLock.Unlock()
-
-				//select {
-				//case putRes = <-d.tpl.PutResChan:
-				//	keepSending = false
-				//case <-d.leaderReconfiguredDone:
-				// Send again
-				//case <-time.After(2 * time.Second): // set a timeout of 2 second
-				// 	// Send again
 
 			}
 
@@ -452,25 +479,41 @@ func (d *KVS) sender() {
 
 			//var err error
 			keepSending := true
-			util.PrintfYellow("In Get, before keepSending loop")
+			util.PrintfYellow("%s\n", "In Get, before keepSending loop")
 			for keepSending {
-				util.PrintfYellow("In Get, inside keepSending loop")
+				util.PrintfYellow("%s\n", "In Get, inside keepSending loop")
 				//d.tailServerLock.Lock()
 				d.leaderNodeLock.Lock()
-				util.PrintfYellow("In Get, after Lock, before call")
-				putDoneChan := d.leaderClientRPC.Go("Server.Get", getReq, &getRes, nil)
-				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
-					<-d.leaderReconfiguredDone
-				} else {
-					<-putDoneChan.Done
-					keepSending = false
-					d.getTrace = req.tracer.ReceiveToken(getRes.Token)
-					d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
+				util.PrintfYellow("%s\n", "In Get, after Lock, before call")
+				getDoneChan := d.leaderClientRPC.Go("Server.Get", getReq, &getRes, nil)
+				select {
+				case <-getDoneChan.Done:
+					if getDoneChan.Error != nil {
+						// resend request if remote received an error
+						util.PrintfPurple("%s%s\n", "Error received by kvslib, from Leader: ", getDoneChan.Error.Error())
+					} else {
+						keepSending = false
+						d.getTrace = req.tracer.ReceiveToken(getRes.Token)
+						d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
+					}
+				case <-d.leaderReconfiguredDone:
+					// Send again
+					// case <-time.After(2 * time.Second): // set a timeout of 2 second
+					// Send again
 				}
-
-				util.PrintfYellow("In Get, after Lock, after call")
+				util.PrintfYellow("%s\n", "In Get, after Lock, after call")
 				d.leaderNodeLock.Unlock()
-				util.PrintfYellow("In Get, after unlock")
+				util.PrintfYellow("%s\n", "In Get, after unlock")
+				//keepSending = false
+				// d.leaderNodeLock.Unlock()
+				// if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
+				// 	<-d.leaderReconfiguredDone
+				// } else {
+				// 	<-putDoneChan.Done
+				// 	keepSending = false
+				// 	d.getTrace = req.tracer.ReceiveToken(getRes.Token)
+				// 	d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
+				// }
 
 			}
 		} else if req.kind == "STOP" {
@@ -513,10 +556,26 @@ func (tpl *ServerListener) PutSuccess(putRes PutResponse, isDone *bool) error {
 	return nil
 }
 
-func (cnl *CoordListener) ChangeLeaderNode(newServerIPPort string, isDone *bool) error {
-	cnl.ServerFailChan <- ServerFail{Leader, newServerIPPort}
+/*func (cnl *CoordListener) ChangeLeaderNode(newServerIPData NewLeaderStruct, isDone *bool) error {
+	tracer := tracing.
+	cnl.ServerFailChan <- ServerFail{Leader, newServerIPData.ip}
 	*isDone = true
-	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPPort)
+	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPData.ip)
+	return nil
+}*/
+
+func (d *KVS) ChangeLeaderNode(newServerIPData NewLeaderStruct, reply *NewLeaderChangedStruct) error {
+	newTrace := d.kTracer.ReceiveToken(newServerIPData.token)
+	newTrace.RecordAction(LeaderNodeUpdated{
+		ClientId: d.clientId,
+		ServerId: newServerIPData.serverNum,
+	})
+
+	d.cnl.ServerFailChan <- ServerFail{Leader, newServerIPData.ip}
+	*reply = NewLeaderChangedStruct{
+		token: d.ktrace.GenerateToken(),
+	}
+	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPData.serverNum)
 	return nil
 }
 
