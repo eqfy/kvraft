@@ -381,9 +381,9 @@ func (d *KVS) handleFailure() {
 			newLNClientTCP.SetLinger(0)
 			d.leaderClientRPC = rpc.NewClient(newLNClientTCP)
 
-			util.PrintfYellow("Before leaderReconfiguredDone")
+			util.PrintfYellow("%s\n", "Before leaderReconfiguredDone")
 			d.leaderReconfiguredDone <- true
-			util.PrintfYellow("After leaderReconfiguredDone")
+			util.PrintfYellow("%s\n", "After leaderReconfiguredDone")
 			d.leaderNodeLock.Unlock()
 		} else if serverFailure.ServerPosition == StopServer {
 			d.allErrRecvd <- true
@@ -412,23 +412,36 @@ func (d *KVS) sender() {
 				putDoneChan := d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
 				// TODO: this is just to stop keepSending from running into an infinite loop for Milestone 2
 				//       We likely need to add something to the commented out select block below once leader reconfiguration is added
-				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
-					<-d.leaderReconfiguredDone
-				} else {
-					<-putDoneChan.Done
-					keepSending = false
+				// if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
+				// 	<-d.leaderReconfiguredDone
+				// } else {
+				// 	// <-putDoneChan.Done
+				// 	// keepSending = false
+				// 	select {
+				// 		case <-putDoneChan.Done:
+				// 			keepSending = false
+				// 		case <-d.leaderReconfiguredDone:
+				// 		// Send again
+				// 		// case <-time.After(2 * time.Second): // set a timeout of 2 second
+				// 			// Send again
+				// 	}
+				// }
+				select {
+				case <-putDoneChan.Done:
+					if putDoneChan.Error != nil {
+						// resend request if remote received an error
+						util.PrintfPurple("%s%s\n", "Error received by kvslib, from Leader: ", putDoneChan.Error.Error())
+					} else {
+						keepSending = false
+					}
+				case <-d.leaderReconfiguredDone:
+					// Send again
+					// case <-time.After(2 * time.Second): // set a timeout of 2 second
+					// Send again
 				}
 
 				//keepSending = false
 				d.leaderNodeLock.Unlock()
-
-				//select {
-				//case putRes = <-d.tpl.PutResChan:
-				//	keepSending = false
-				//case <-d.leaderReconfiguredDone:
-				// Send again
-				//case <-time.After(2 * time.Second): // set a timeout of 2 second
-				// 	// Send again
 
 			}
 
@@ -451,25 +464,41 @@ func (d *KVS) sender() {
 
 			//var err error
 			keepSending := true
-			util.PrintfYellow("In Get, before keepSending loop")
+			util.PrintfYellow("%s\n", "In Get, before keepSending loop")
 			for keepSending {
-				util.PrintfYellow("In Get, inside keepSending loop")
+				util.PrintfYellow("%s\n", "In Get, inside keepSending loop")
 				//d.tailServerLock.Lock()
 				d.leaderNodeLock.Lock()
-				util.PrintfYellow("In Get, after Lock, before call")
-				putDoneChan := d.leaderClientRPC.Go("Server.Get", getReq, &getRes, nil)
-				if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
-					<-d.leaderReconfiguredDone
-				} else {
-					<-putDoneChan.Done
-					keepSending = false
-					d.getTrace = req.tracer.ReceiveToken(getRes.Token)
-					d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
+				util.PrintfYellow("%s\n", "In Get, after Lock, before call")
+				getDoneChan := d.leaderClientRPC.Go("Server.Get", getReq, &getRes, nil)
+				select {
+				case <-getDoneChan.Done:
+					if getDoneChan.Error != nil {
+						// resend request if remote received an error
+						util.PrintfPurple("%s%s\n", "Error received by kvslib, from Leader: ", getDoneChan.Error.Error())
+					} else {
+						keepSending = false
+						d.getTrace = req.tracer.ReceiveToken(getRes.Token)
+						d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
+					}
+				case <-d.leaderReconfiguredDone:
+					// Send again
+					// case <-time.After(2 * time.Second): // set a timeout of 2 second
+					// Send again
 				}
-
-				util.PrintfYellow("In Get, after Lock, after call")
+				util.PrintfYellow("%s\n", "In Get, after Lock, after call")
 				d.leaderNodeLock.Unlock()
-				util.PrintfYellow("In Get, after unlock")
+				util.PrintfYellow("%s\n", "In Get, after unlock")
+				//keepSending = false
+				// d.leaderNodeLock.Unlock()
+				// if putDoneChan.Error != nil { // will now wait for head server to have finished reconfiguring
+				// 	<-d.leaderReconfiguredDone
+				// } else {
+				// 	<-putDoneChan.Done
+				// 	keepSending = false
+				// 	d.getTrace = req.tracer.ReceiveToken(getRes.Token)
+				// 	d.getTrace.RecordAction(GetResultRecvd{getRes.OpId, getRes.Key, getRes.Value})
+				// }
 
 			}
 		} else if req.kind == "STOP" {
