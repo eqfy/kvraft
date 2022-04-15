@@ -189,6 +189,7 @@ type ServerListener struct {
 
 type CoordListener struct {
 	ServerFailChan chan ServerFail
+	// Kvs            *KVS
 }
 
 type ReqQueue struct {
@@ -214,13 +215,13 @@ type AddCNLReq struct {
 }
 
 type NewLeaderStruct struct {
-	ip        string
-	serverNum uint8
-	token     tracing.TracingToken
+	Ip        string
+	ServerNum uint8
+	Token     tracing.TracingToken
 }
 
 type NewLeaderChangedStruct struct {
-	token tracing.TracingToken
+	Token tracing.TracingToken
 }
 
 func NewKVS() *KVS {
@@ -281,7 +282,7 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 	d.cnl = cnl
 	d.cnl.ServerFailChan = make(chan ServerFail, 16)
 	coordRPCListener := rpc.NewServer()
-	coordRegErr := coordRPCListener.Register(cnl)
+	coordRegErr := coordRPCListener.Register(d)
 	if err = checkCriticalErr(coordRegErr, "an error registering cnl for coordRPCListener in kvslib: "); err != nil {
 		return nil, err
 	}
@@ -565,17 +566,17 @@ func (tpl *ServerListener) PutSuccess(putRes PutResponse, isDone *bool) error {
 }*/
 
 func (d *KVS) ChangeLeaderNode(newServerIPData NewLeaderStruct, reply *NewLeaderChangedStruct) error {
-	newTrace := d.kTracer.ReceiveToken(newServerIPData.token)
+	newTrace := d.kTracer.ReceiveToken(newServerIPData.Token)
 	newTrace.RecordAction(LeaderNodeUpdateRecvd{
 		ClientId: d.clientId,
-		ServerId: newServerIPData.serverNum,
+		ServerId: newServerIPData.ServerNum,
 	})
 
-	d.cnl.ServerFailChan <- ServerFail{Leader, newServerIPData.ip}
+	d.cnl.ServerFailChan <- ServerFail{Leader, newServerIPData.Ip}
 	*reply = NewLeaderChangedStruct{
-		token: d.ktrace.GenerateToken(),
+		Token: newTrace.GenerateToken(),
 	}
-	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPData.serverNum)
+	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPData.ServerNum)
 	return nil
 }
 
