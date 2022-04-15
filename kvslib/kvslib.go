@@ -6,6 +6,7 @@ import (
 	"net/rpc"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"cs.ubc.ca/cpsc416/kvraft/util"
 
@@ -399,13 +400,13 @@ func (d *KVS) sender() {
 		if req.kind == "PUT" {
 			// Send to leader server
 			d.putTrace = req.tracer.CreateTrace()
-			d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
-			var putReq PutRequest = PutRequest{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value, d.putTrace.GenerateToken()}
 
 			// var err error
 			keepSending := true
 			var putRes PutResponse
 			for keepSending {
+				d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
+				var putReq PutRequest = PutRequest{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value, d.putTrace.GenerateToken()}
 
 				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
@@ -431,6 +432,7 @@ func (d *KVS) sender() {
 					if putDoneChan.Error != nil {
 						// resend request if remote received an error
 						util.PrintfPurple("%s%s\n", "Error received by kvslib, from Leader: ", putDoneChan.Error.Error())
+						<-time.After(2 * time.Second)
 					} else {
 						keepSending = false
 					}
@@ -451,7 +453,7 @@ func (d *KVS) sender() {
 				d.putTrace = req.tracer.ReceiveToken(putRes.Token)
 				d.putTrace.RecordAction(PutResultRecvd{putRes.OpId, putRes.Key})
 				d.resRecvd[req.pq.OpId] = putRes
-				d.notifyCh <- ResultStruct{putRes.OpId, putReq.Value} // FIXME maybe have putRes return the value
+				d.notifyCh <- ResultStruct{putRes.OpId, putRes.Value}
 			}
 		} else if req.kind == "GET" {
 			// Send to tail server
@@ -476,6 +478,7 @@ func (d *KVS) sender() {
 					if getDoneChan.Error != nil {
 						// resend request if remote received an error
 						util.PrintfPurple("%s%s\n", "Error received by kvslib, from Leader: ", getDoneChan.Error.Error())
+						<-time.After(2 * time.Second)
 					} else {
 						keepSending = false
 						d.getTrace = req.tracer.ReceiveToken(getRes.Token)
