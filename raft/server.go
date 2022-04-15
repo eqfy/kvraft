@@ -87,9 +87,9 @@ type AppendEntriesResponseSent AppendEntriesReply
 type AppendEntriesResponseRecvd AppendEntriesReply
 
 type ForceFollowerLog struct {
-	serverIndex uint8
-	nextIndex   uint64
-	matchIndex  uint64
+	ServerIndex uint8
+	NextIndex   uint64
+	MatchIndex  uint64
 }
 
 type BecameLeader struct {
@@ -144,6 +144,9 @@ type Server struct {
 
 	kvMu sync.RWMutex // protects following
 	kv   map[string]string
+
+	clientMu sync.RWMutex // protects following
+	clientOp []uint64     // Stores the latest op id for each client
 
 	// Volatile state
 	commitIndex uint64
@@ -929,9 +932,9 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg, tra
 // Succeeds or retries indefinitely
 func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool, trace *tracing.Trace) {
 	trace.RecordAction(ForceFollowerLog{
-		serverIndex: peerIndex,
-		nextIndex:   s.nextIndex[peerIndex-1],
-		matchIndex:  s.matchIndex[peerIndex-1],
+		ServerIndex: peerIndex,
+		NextIndex:   s.nextIndex[peerIndex-1],
+		MatchIndex:  s.matchIndex[peerIndex-1],
 	})
 
 	lastLogEntry := s.log[s.nextIndex[peerIndex-1]-1]
@@ -961,14 +964,12 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 
 	switch entry.Command.Kind {
 	case Put:
-		// TODO lock this and return result of put
 		s.kv[entry.Command.Key] = entry.Command.Val
 		newVal := s.kv[entry.Command.Key]
 		fmt.Printf("(KV STATE): %v\n", s.kv)
 		fmt.Printf("(KV STATE): Applied Entry, Key: %s, Val: %s\n", entry.Command.Key, newVal)
 		return Command{Kind: Get, Key: entry.Command.Key, Val: newVal}, nil
 	case Get:
-		// TODO return result of get
 		command := Command{Kind: Get, Key: entry.Command.Key}
 		command.Val = s.kv[entry.Command.Key]
 		return command, nil
