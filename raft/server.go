@@ -660,8 +660,6 @@ func (s *Server) raftLeader(errorChan chan<- error) {
 		s.trace.RecordAction(BecameLeader{s.ServerId})
 
 		// init volatile state
-		s.commitIndex = 0
-		s.lastApplied = 0
 		s.initLeaderVolatileState()
 
 		if canRunLeader {
