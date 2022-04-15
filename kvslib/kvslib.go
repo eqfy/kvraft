@@ -306,7 +306,7 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 	d.opId = 0
 	go coordRPCListener.Accept(coordTCPListener)
 	go d.sender()
-	go d.handleFailure()
+	//go d.handleFailure()
 	return d.notifyCh, nil
 }
 
@@ -346,32 +346,32 @@ func (d *KVS) Put(tracer *tracing.Tracer, clientId string, key string, value str
 
 }
 
-func (d *KVS) handleFailure() {
-	d.leaderReconfiguredDone = make(chan bool, 256) // TODO maybe a bigger buffer is needed
-	for {
-		serverFailure := <-d.cnl.ServerFailChan
-		if serverFailure.ServerPosition == Leader {
-			d.leaderNodeLock.Lock()
-			/* Close old client connection to HS */
-			d.leaderNodeIPPort = serverFailure.NewServerIpPort
-			hsClientRPCCloseErr := d.leaderClientRPC.Close()
-			checkWarning(hsClientRPCCloseErr, "error closing the RPC client for leader server(HS) upon receiving failed HS msg in handlGet: ")
+/*func (d *KVS) handleFailure() {
+d.leaderReconfiguredDone = make(chan bool, 256) // TODO maybe a bigger buffer is needed
+for {
+	serverFailure := <-d.cnl.ServerFailChan
+	if serverFailure.ServerPosition == Leader {
+		d.leaderNodeLock.Lock()
+		/* Close old client connection to HS */
+/*d.leaderNodeIPPort = serverFailure.NewServerIpPort
+hsClientRPCCloseErr := d.leaderClientRPC.Close()
+checkWarning(hsClientRPCCloseErr, "error closing the RPC client for leader server(HS) upon receiving failed HS msg in handlGet: ")
 
-			/* Get new Leader server from coord */
-			d.ktrace.RecordAction(LeaderReq{d.clientId})
-			var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
-			var leaderNodeRes CCoordGetLeaderNodeReply
-			hsReqErr := d.coordClientRPC.Call("ClientLearnServers.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
-			if hsReqErr != nil {
-				checkWarning(hsReqErr, "error requesting leader server from coord: ")
-				continue
-			}
-			d.ktrace = d.kTracer.ReceiveToken(leaderNodeRes.Token)
-			d.ktrace.RecordAction(LeaderResRecvd{d.clientId, leaderNodeRes.ServerId})
-			d.leaderNodeIPPort = leaderNodeRes.ServerIpPort
+/* Get new Leader server from coord */
+/*d.ktrace.RecordAction(LeaderReq{d.clientId})
+var leaderNodeReq CCoordGetLeaderNodeArg = CCoordGetLeaderNodeArg{ClientInfo{d.clientId, d.coordListenerIPPort}, d.ktrace.GenerateToken()}
+var leaderNodeRes CCoordGetLeaderNodeReply
+hsReqErr := d.coordClientRPC.Call("ClientLearnServers.GetLeaderNode", leaderNodeReq, &leaderNodeRes)
+if hsReqErr != nil {
+	checkWarning(hsReqErr, "error requesting leader server from coord: ")
+	continue
+}
+d.ktrace = d.kTracer.ReceiveToken(leaderNodeRes.Token)
+d.ktrace.RecordAction(LeaderResRecvd{d.clientId, leaderNodeRes.ServerId})
+d.leaderNodeIPPort = leaderNodeRes.ServerIpPort
 
-			/* Start new client connection to HS */
-			newHSAddr, newHSAddrErr := net.ResolveTCPAddr("tcp", d.leaderNodeIPPort)
+/* Start new client connection to HS */
+/*newHSAddr, newHSAddrErr := net.ResolveTCPAddr("tcp", d.leaderNodeIPPort)
 			checkWarning(newHSAddrErr, "error resolving newHSAddr upon receiving failed HS msg in handlGet:")
 			newLNClientTCP, newLNClientTCPErr := net.DialTCP("tcp", d.lnLocalTCPAddr, newHSAddr)
 			if newLNClientTCPErr != nil {
@@ -390,7 +390,7 @@ func (d *KVS) handleFailure() {
 			return
 		}
 	}
-}
+}*/
 
 func (d *KVS) sender() {
 	// queue of operations
