@@ -139,11 +139,13 @@ type Server struct {
 	currentTerm uint32
 	votedFor    uint8
 
-	logMu sync.RWMutex //protects following
-	log   []Entry
+	logMu              sync.RWMutex //protects following
+	log                []Entry
+	lastClientLogEntry map[string]uint32 // maps a clientId to the latest log entry for that client
 
-	kvMu sync.RWMutex // protects following
-	kv   map[string]string
+	kvMu                sync.RWMutex // protects following
+	kv                  map[string]string
+	lastClientKVCommand map[string]Command // maps a clientId to the latest commited command for that client
 
 	// Volatile state
 	commitIndex uint64
@@ -203,17 +205,24 @@ type ClientCommand struct {
 }
 
 type Command struct {
-	Kind CommandKind
-	Key  string
-	Val  string
+	Kind       CommandKind
+	Key        string
+	Val        string
+	ClientInfo ClientInfo
 }
 
 type CommandKind int
 
 const (
-	Put CommandKind = iota
+	NoOp CommandKind = iota // used only internally, cannot be issued by client
+	Put
 	Get
 )
+
+type ClientInfo struct {
+	ClientId string
+	OpId     uint32
+}
 
 // Join procedure
 type JoinRequest struct {
@@ -237,6 +246,8 @@ type GetResponse struct {
 	Value    string
 	Token    tracing.TracingToken
 }
+
+type NoOpRequest struct{}
 
 type TokenRequest struct {
 	Token tracing.TracingToken
@@ -288,6 +299,8 @@ func (s *Server) initServerState(serverId uint8, coordAddr string, serverAddr st
 	s.kv = make(map[string]string)
 	s.log = make([]Entry, 0)
 	s.log = append(s.log, Entry{}) // log is 1-indexed
+	s.lastClientLogEntry = make(map[string]uint32)
+	s.lastClientKVCommand = make(map[string]Command)
 
 	// join sync
 	joinComplete = make(chan bool)
@@ -467,7 +480,7 @@ func (s *Server) GetFcheckerAddr(request bool, reply *string) error {
 	return nil
 }
 
-// NotifyFailOverLeader TEMPLATE Server learns it's the new leader when coord calls this
+// NotifyFailOverLeader Server learns it's the new leader when coord calls this
 func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *LeaderFailOverAck) error {
 	fmt.Println("Received leader failure notification. I'm the new leader.")
 	if notification.ServerId != s.ServerId {
@@ -486,7 +499,16 @@ func (s *Server) NotifyFailOverLeader(notification LeaderFailOver, reply *Leader
 	s.currentTerm = uint32(notification.Term)
 	s.isLeader = true
 	s.runLeader <- true
-	s.triggerAllFollowerLogUpdate <- true
+
+	// Send an no-op to ensure that everything on log is replicated
+	s.trace.RecordAction(NoOpRequest{})
+	clientCommand := ClientCommand{
+		command: Command{
+			Kind: NoOp,
+		},
+		done: make(chan Command, 1),
+	}
+	s.commandFromClient <- clientCommand
 
 	reply.ServerId = s.ServerId
 	reply.Token = cTrace.GenerateToken()
@@ -516,12 +538,63 @@ func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 		Key:      arg.Key,
 	})
 
+	/*
+		First check if a request is in server's log:
+		If false, then we know that this new request and do the regular things
+		If true and the request is not the last request seen from the client, then something is wrong with the client.
+		If true and the request is the last request seen from the client, then check the kv
+			If related log entry has been committed, then return the cached result of that commit
+			If related log entry has not been committed, then return an error and let client retry (so that leader can eventually commit the log entry to the kv)
+		Note the invariant here is that the client will send commands in order and continuously resend
+		its latest command until it got back a result before attempting to send a new command.
+	*/
+	s.logMu.RLock()
+	lastLogOpId, seenClientInLog := s.lastClientLogEntry[arg.ClientId]
+	s.logMu.RUnlock()
+	if seenClientInLog {
+		if lastLogOpId > arg.OpId {
+			util.PrintfRed("ERROR in Client: client queried for an expired command, some part of client implementation is incorrect!")
+			return fmt.Errorf("client queried for an expired command, some part of client implementation is incorrect")
+		} else if lastLogOpId == arg.OpId {
+			s.kvMu.RLock()
+			lastClientCmd, seenClientInKV := s.lastClientKVCommand[arg.ClientId]
+			s.kvMu.RUnlock()
+
+			if !seenClientInKV || lastClientCmd.ClientInfo.OpId < arg.OpId {
+				return fmt.Errorf("the request is not yet committed to log, client will need to retry")
+			} else if lastClientCmd.ClientInfo.OpId == arg.OpId {
+				gtrace.RecordAction(GetCommitted{
+					ClientId: arg.ClientId,
+					OpId:     arg.OpId,
+					Key:      arg.Key,
+					Value:    lastClientCmd.Val,
+				})
+
+				resp.ClientId = arg.ClientId
+				resp.OpId = arg.OpId
+				resp.Key = arg.Key
+				resp.Value = lastClientCmd.Val
+				resp.Token = gtrace.GenerateToken()
+				fmt.Printf("(Leader Put): received and resolved duplicate get: %v\n", *resp)
+				return nil
+			} else {
+				util.PrintfRed("ERROR in Server: kv has committed a entry not in the log")
+				os.Exit(1)
+			}
+		}
+		// else process the request as normal
+	}
+
 	done := make(chan Command, 1)
 
 	clientCommand := ClientCommand{
 		command: Command{
 			Kind: Get,
 			Key:  arg.Key,
+			ClientInfo: ClientInfo{
+				ClientId: arg.ClientId,
+				OpId:     arg.OpId,
+			},
 		},
 		done: done,
 	}
@@ -559,6 +632,57 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 		Value:    arg.Value,
 	})
 
+	/*
+		First check if a request is in server's log:
+		If false, then we know that this new request and do the regular things
+		If true and the request is not the last request seen from the client, then something is wrong with the client.
+		If true and the request is the last request seen from the client, then check the kv
+			If related log entry has been committed, then return the cached result of that commit
+			If related log entry has not been committed, then return an error and let client retry (so that leader can eventually commit the log entry to the kv)
+		Note the invariant here is that the client will send commands in order and continuously resend
+		its latest command until it got back a result before attempting to send a new command.
+	*/
+	// util.PrintfGreen("Waiting for logMu %v\n", s.log)
+	s.logMu.RLock()
+	// util.PrintfCyan("lastClientLog: %v\n", s.lastClientLogEntry[arg.ClientId])
+	lastLogOpId, seenClientInLog := s.lastClientLogEntry[arg.ClientId]
+	s.logMu.RUnlock()
+	// util.PrintfGreen("Releasing logMu\n")
+
+	if seenClientInLog {
+		if lastLogOpId > arg.OpId {
+			util.PrintfRed("ERROR in Client: client queried for an expired command, some part of client implementation is incorrect!")
+			return fmt.Errorf("client queried for an expired command, some part of client implementation is incorrect")
+		} else if lastLogOpId == arg.OpId {
+			s.kvMu.RLock()
+			lastClientCmd, seenClientInKV := s.lastClientKVCommand[arg.ClientId]
+			s.kvMu.RUnlock()
+
+			if !seenClientInKV || lastClientCmd.ClientInfo.OpId < arg.OpId {
+				return fmt.Errorf("the request is not yet committed to log, client will need to retry")
+			} else if lastClientCmd.ClientInfo.OpId == arg.OpId {
+				ptrace.RecordAction(PutCommitted{
+					ClientId: arg.ClientId,
+					OpId:     arg.OpId,
+					Key:      arg.Key,
+					Value:    lastClientCmd.Val,
+				})
+
+				resp.ClientId = arg.ClientId
+				resp.OpId = arg.OpId
+				resp.Key = arg.Key
+				resp.Value = lastClientCmd.Val
+				resp.Token = ptrace.GenerateToken()
+				fmt.Printf("(Leader Put): received and resolved duplicate put: %v\n", *resp)
+				return nil
+			} else {
+				util.PrintfRed("ERROR in Server: kv has committed a entry not in the log")
+				os.Exit(1)
+			}
+		}
+		// else process the request as normal
+	}
+
 	done := make(chan Command, 1)
 
 	clientCommand := ClientCommand{
@@ -566,6 +690,10 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 			Kind: Put,
 			Key:  arg.Key,
 			Val:  arg.Value,
+			ClientInfo: ClientInfo{
+				ClientId: arg.ClientId,
+				OpId:     arg.OpId,
+			},
 		},
 		done: done,
 	}
@@ -751,23 +879,30 @@ func (s *Server) sendHeartbeats(stopHeartbeats chan bool) {
 	}()
 }
 
-func (s *Server) doCommit(errorChan chan<- error) {
+// Returns the last applied command
+func (s *Server) doCommit(errorChan chan<- error) Command {
 	s.kvMu.Lock()
 	defer s.kvMu.Unlock()
+
+	var command Command
+	var err error
 	for s.commitIndex > s.lastApplied {
 		s.lastApplied++
-		_, err := s.applyEntry(s.log[s.lastApplied])
+		command, err = s.applyEntry(s.log[s.lastApplied])
 		if err != nil {
 			// question: should we do a s.lastApplied-- here?
 			errorChan <- err
 			fmt.Printf("error %v\n", err)
 		}
 	}
+	return command
 }
 
 func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan<- error) {
 	/*  - Send AppendEntries in parallel to all peers.
 	- Once majority acks, return clientCommand.done <- clientCommand.command */
+	s.logMu.Lock()
+	defer s.logMu.Unlock()
 	newEntry := Entry{
 		Term:    s.currentTerm,
 		Command: clientCommand.command,
@@ -778,6 +913,10 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 
 	/* Append to my log*/
 	s.log = append(s.log, newEntry)
+	/* Record that this is the latest command sent by the client */
+	if clientCommand.command.Kind != NoOp {
+		s.lastClientLogEntry[clientCommand.command.ClientInfo.ClientId] = clientCommand.command.ClientInfo.OpId
+	}
 
 	currPeers := len(s.Peers) - 1
 	peerReplies := make(chan bool, currPeers) // buffer channel
@@ -797,15 +936,11 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 	<-majorityReplied
 
 	/* Mark entry as committed, and applyEntry to update kv state*/
-	s.commitIndex += 1
-	command, err := s.applyEntry(newEntry)
-	if err != nil {
-		errorChan <- err
-		util.PrintfRed("error %v\n", err)
-	}
-	s.lastApplied++
-	s.commitIndexUpdated <- true
+
+	s.commitIndex = uint64(len(s.log) - 1)
+	command := s.doCommit(errorChan)
 	fmt.Printf("(Leader AppendEntries): Successfully replicated entry=%v on majority, commitIndex updated to be %d\n", newEntry, s.commitIndex)
+	// simulateLeaderFailedBeforeReplyingToClient(s)  // Uncomment to test duplicate request case!
 	clientCommand.done <- command
 }
 
@@ -856,7 +991,7 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 				trace = s.tracer.ReceiveToken(reply.Token)
 				trace.RecordAction(AppendEntriesResponseRecvd(reply))
 				res := call.Reply.(*AppendEntriesReply)
-				// fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
+				fmt.Printf("(Leader AppendEntries): Received AppendEntries result=%v from serverId=%d\n", res, peer.ServerId)
 				if !res.Success {
 					if res.Term > args.Term {
 						// change server to follower
@@ -921,7 +1056,7 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg, tra
 	return reply.Success, err
 }
 
-// Force update the log of a single follower, uses a waitgroup for notifying success
+// Force update the log of a single follower
 // Succeeds or retries indefinitely
 func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool, trace *tracing.Trace) {
 	trace.RecordAction(ForceFollowerLog{
@@ -954,20 +1089,22 @@ func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool, trace
 }
 
 func (s *Server) applyEntry(entry Entry) (Command, error) {
-
 	switch entry.Command.Kind {
+	case NoOp:
+		return entry.Command, nil
 	case Put:
-		// TODO lock this and return result of put
 		s.kv[entry.Command.Key] = entry.Command.Val
-		newVal := s.kv[entry.Command.Key]
+		result := entry.Command
+		result.Val = s.kv[entry.Command.Key]
+		s.lastClientKVCommand[entry.Command.ClientInfo.ClientId] = result
 		fmt.Printf("(KV STATE): %v\n", s.kv)
-		fmt.Printf("(KV STATE): Applied Entry, Key: %s, Val: %s\n", entry.Command.Key, newVal)
-		return Command{Kind: Get, Key: entry.Command.Key, Val: newVal}, nil
+		fmt.Printf("(KV STATE): Applied Entry, Key: %s, Val: %s\n", entry.Command.Key, result.Val)
+		return result, nil
 	case Get:
-		// TODO return result of get
-		command := Command{Kind: Get, Key: entry.Command.Key}
-		command.Val = s.kv[entry.Command.Key]
-		return command, nil
+		result := entry.Command
+		result.Val = s.kv[entry.Command.Key]
+		s.lastClientKVCommand[entry.Command.ClientInfo.ClientId] = result
+		return result, nil
 	default:
 		return Command{}, fmt.Errorf("unable to apply entry %v", entry)
 	}
@@ -1067,6 +1204,15 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 		}
 		s.commitIndexUpdated <- true
 	}
+
+	// Update the latest known command for each client according to arg.Entries
+	for _, entry := range arg.Entries {
+		if entry.Command.Kind == NoOp {
+			continue
+		}
+		s.lastClientLogEntry[entry.Command.ClientInfo.ClientId] = entry.Command.ClientInfo.OpId
+	}
+
 	reply.Success = true
 	trace.RecordAction(AppendEntriesResponseSent(*reply))
 	reply.Token = trace.GenerateToken()
@@ -1080,8 +1226,10 @@ func (e Command) String() string {
 		return fmt.Sprintf("Get(%s)", e.Key)
 	case Put:
 		return fmt.Sprintf("Put(%s,%s)", e.Key, e.Val)
+	case NoOp:
+		return "No-Op"
 	default:
-		return fmt.Sprintf("Unrecognized command")
+		return "Unrecognized command"
 	}
 }
 
@@ -1133,5 +1281,12 @@ func simulateNetworkPartition(s *Server) {
 			fmt.Printf("\nbeginning to simulate network partition. Won't respond to heartbeats for a while\n")
 			fchecker.SimulateNetworkPartition = true
 		}
+	}
+}
+
+func simulateLeaderFailedBeforeReplyingToClient(s *Server) {
+	if s.ServerId == 1 && s.commitIndex == 38 {
+		fmt.Println("Failing leader before it responds back to client")
+		os.Exit(1)
 	}
 }

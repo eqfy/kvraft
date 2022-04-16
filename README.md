@@ -36,7 +36,7 @@ Download the generated `shiviz_output.log` file and to visualize it with https:/
 
 ## Testing server failure
 
-The system can survive up to N/2 - 1 failures. To test for server failure, can terminate servers (fail-stop failure). If a leader fails, then coord will designate a new leader, and kvslib will failover to the new leader. 
+For 2F + 1 servers, the system can survive up to F failures. To test for server failure, can terminate servers (fail-stop failure). If a leader fails, then coord will designate a new leader, and kvslib will failover to the new leader. 
 
 ### Example output
 Testing with 20 puts and gets as specified in `cmd/client/main.go`. 
@@ -86,6 +86,37 @@ Received leader failure notification. I'm the new leader.
 35. Term=2, Index=35, Entry=Get(k16)
 ...
 ```
+
+
+### Testing duplicate client requests
+In certain scenarios where the leader successfully replicates a client request to a majority of followers and then fails, the client will never get back an ACK from the original leader. Thus, the client will resend the request to the new leader, possibly resulting in a duplicated client request which breaks the linearizable guarantees of Raft. To resolve this, we've added checks so that the server can immediately return with correct value instead of adding the request to the log again. To see this test case, please uncomment the following call in server.go (around L930) and run the code with 5 servers and 1 client:
+```
+simulateLeaderFailedBeforeReplyingToClient(s)
+```
+You should then see one of the following in the new leader's log
+```
+...
+(Leader Put): received and resolved duplicate put
+
+or 
+
+(Leader Get): received and resolved duplicate get
+...
+```
+and also see a No-Op that is sent by the lead server to ensure that all log entries up to and including the No-Op are committed on leader and safely replicated on follower.
+```
+...
+35. Term=1, Index=35, Entry=Put(k17,val17)
+36. Term=1, Index=36, Entry=Get(k17)
+37. Term=1, Index=37, Entry=Put(k18,val18)
+38. Term=2, Index=38, Entry=No-Op
+39. Term=2, Index=39, Entry=Get(k18)
+40. Term=2, Index=40, Entry=Put(k19,val19)
+41. Term=2, Index=41, Entry=Get(k19)
+...
+```
+
+
 ## Testing each component on its own
 
 ### Coord (network partitions)
