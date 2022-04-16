@@ -36,13 +36,13 @@ func main() {
 	// time.Sleep(5 * time.Second)
 
 	// Put a key-value pair
-	op, err := client.Put(tracer, clientId, "key2", "value2")
-	util.CheckErr(err, "Error putting value %v, opId: %v\b", err, op)
+	// op, err := client.Put(tracer, clientId, "key2", "value2")
+	// util.CheckErr(err, "Error putting value %v, opId: %v\b", err, op)
 
-	op, err = client.Put(tracer, clientId, "key2", "value3")
-	util.CheckErr(err, "Error putting value %v, opId: %v\b", err, op)
+	// op, err = client.Put(tracer, clientId, "key2", "value3")
+	// util.CheckErr(err, "Error putting value %v, opId: %v\b", err, op)
 
-	op, err = client.Get(tracer, clientId, "key2")
+	// op, err = client.Get(tracer, clientId, "key2")
 
 	// // time.Sleep(5 * time.Second)
 
