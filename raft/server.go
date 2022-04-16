@@ -640,7 +640,7 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 	*/
 	// util.PrintfGreen("Waiting for logMu %v\n", s.log)
 	s.logMu.RLock()
-	util.PrintfCyan("lastClientLog: %v\n", s.lastClientLogEntry[arg.ClientId])
+	// util.PrintfCyan("lastClientLog: %v\n", s.lastClientLogEntry[arg.ClientId])
 	lastLogOpId, seenClientInLog := s.lastClientLogEntry[arg.ClientId]
 	s.logMu.RUnlock()
 	// util.PrintfGreen("Releasing logMu\n")
@@ -652,7 +652,7 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 		} else if lastLogOpId == arg.OpId {
 			// util.PrintfGreen("Waiting for kvMu %v\n", s.kv)
 			s.kvMu.RLock()
-			util.PrintfCyan("lastClientKV: %v\n%v\n%v\n", s.lastClientKVCommand[arg.ClientId].Key, s.lastClientKVCommand[arg.ClientId].Val, s.lastClientKVCommand[arg.ClientId].ClientInfo.OpId)
+			// util.PrintfCyan("lastClientKV: %v\n%v\n%v\n", s.lastClientKVCommand[arg.ClientId].Key, s.lastClientKVCommand[arg.ClientId].Val, s.lastClientKVCommand[arg.ClientId].ClientInfo.OpId)
 			lastClientCmd, seenClientInKV := s.lastClientKVCommand[arg.ClientId]
 			s.kvMu.RUnlock()
 			// util.PrintfGreen("Releasing kvMu\n")
