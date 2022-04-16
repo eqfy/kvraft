@@ -400,14 +400,13 @@ func (d *KVS) sender() {
 		if req.kind == "PUT" {
 			// Send to leader server
 			d.putTrace = req.tracer.CreateTrace()
+			d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
+			var putReq PutRequest = PutRequest{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value, d.putTrace.GenerateToken()}
 
 			// var err error
 			keepSending := true
 			var putRes PutResponse
 			for keepSending {
-				d.putTrace.RecordAction(Put{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value})
-				var putReq PutRequest = PutRequest{req.pq.ClientId, req.pq.OpId, req.pq.Key, req.pq.Value, d.putTrace.GenerateToken()}
-
 				d.leaderNodeLock.Lock()
 				/*TO TEST: this is to deal with PUT blocking when previously using d.hsClientRPC.Call and having putRes := <-d.tpl.PutResChan outside of for-loop*/
 				putDoneChan := d.leaderClientRPC.Go("Server.Put", putReq, &putRes, nil)
