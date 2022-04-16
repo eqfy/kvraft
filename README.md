@@ -1,5 +1,5 @@
 # KVRaft
-## To run and test milestone 2
+## (milestone 3 updated)
 ## Running the KVRaft service 
 
 1. Start tracing server
