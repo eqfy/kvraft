@@ -982,6 +982,9 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
+	defer func() {
+		s.appendEntriesDone <- true
+	}()
 
 	if arg.Entries != nil {
 		fmt.Printf("(Follower AppendEntries) Received AppendEntry=%v\n", arg)
@@ -1067,7 +1070,7 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	reply.Success = true
 	trace.RecordAction(AppendEntriesResponseSent(*reply))
 	reply.Token = trace.GenerateToken()
-	s.appendEntriesDone <- true
+
 	return nil
 }
 
