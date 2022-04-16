@@ -563,11 +563,19 @@ func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 			if !seenClientInKV || lastClientCmd.ClientInfo.OpId < arg.OpId {
 				return fmt.Errorf("the request is not yet committed to log, client will need to retry")
 			} else if lastClientCmd.ClientInfo.OpId == arg.OpId {
+				gtrace.RecordAction(GetCommitted{
+					ClientId: arg.ClientId,
+					OpId:     arg.OpId,
+					Key:      arg.Key,
+					Value:    lastClientCmd.Val,
+				})
+
 				resp.ClientId = arg.ClientId
 				resp.OpId = arg.OpId
 				resp.Key = arg.Key
 				resp.Value = lastClientCmd.Val
 				resp.Token = gtrace.GenerateToken()
+				fmt.Printf("(Leader Put): received and resolved duplicate put: %v\n", *resp)
 				return nil
 			} else {
 				util.PrintfRed("ERROR in Server: kv has committed a entry not in the log")
@@ -646,21 +654,26 @@ func (s *Server) Put(arg PutRequest, resp *PutResponse) (err error) {
 			util.PrintfRed("ERROR in Client: client queried for an expired command, some part of client implementation is incorrect!")
 			return fmt.Errorf("client queried for an expired command, some part of client implementation is incorrect")
 		} else if lastLogOpId == arg.OpId {
-			// util.PrintfGreen("Waiting for kvMu %v\n", s.kv)
 			s.kvMu.RLock()
-			// util.PrintfCyan("lastClientKV: %v\n%v\n%v\n", s.lastClientKVCommand[arg.ClientId].Key, s.lastClientKVCommand[arg.ClientId].Val, s.lastClientKVCommand[arg.ClientId].ClientInfo.OpId)
 			lastClientCmd, seenClientInKV := s.lastClientKVCommand[arg.ClientId]
 			s.kvMu.RUnlock()
-			// util.PrintfGreen("Releasing kvMu\n")
 
 			if !seenClientInKV || lastClientCmd.ClientInfo.OpId < arg.OpId {
 				return fmt.Errorf("the request is not yet committed to log, client will need to retry")
 			} else if lastClientCmd.ClientInfo.OpId == arg.OpId {
+				ptrace.RecordAction(PutCommitted{
+					ClientId: arg.ClientId,
+					OpId:     arg.OpId,
+					Key:      arg.Key,
+					Value:    lastClientCmd.Val,
+				})
+
 				resp.ClientId = arg.ClientId
 				resp.OpId = arg.OpId
 				resp.Key = arg.Key
 				resp.Value = lastClientCmd.Val
 				resp.Token = ptrace.GenerateToken()
+				fmt.Printf("(Leader Put): received and resolved duplicate put: %v\n", *resp)
 				return nil
 			} else {
 				util.PrintfRed("ERROR in Server: kv has committed a entry not in the log")
@@ -926,10 +939,8 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 
 	s.commitIndex = uint64(len(s.log) - 1)
 	command := s.doCommit(errorChan)
-	// util.PrintfGreen("%v %v\n", s.log, command)
-	// s.commitIndexUpdated <- true
 	fmt.Printf("(Leader AppendEntries): Successfully replicated entry=%v on majority, commitIndex updated to be %d\n", newEntry, s.commitIndex)
-	simulateLeaderFailedBeforeReplyingToClient(s)
+	// simulateLeaderFailedBeforeReplyingToClient(s)
 	clientCommand.done <- command
 }
 
@@ -1274,7 +1285,7 @@ func simulateNetworkPartition(s *Server) {
 }
 
 func simulateLeaderFailedBeforeReplyingToClient(s *Server) {
-	if s.ServerId == 1 { // && rand.Intn(100) < 30
+	if s.ServerId == 1 && s.commitIndex == 38 {
 		fmt.Println("Failing leader before it responds back to client")
 		os.Exit(1)
 	}
