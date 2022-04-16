@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"cs.ubc.ca/cpsc416/kvraft/util"
 	"errors"
 	"fmt"
 	"math"
@@ -24,13 +25,8 @@ type ServerFail struct {
 	ServerId uint8
 }
 
-type ServerFailHandledRecvd struct {
-	FailedServerId   uint8
-	AdjacentServerId uint8
-}
-
-type NewChain struct {
-	Chain []uint8
+type NewClusterView struct {
+	View []uint8
 }
 
 type AllServersJoined struct {
@@ -117,10 +113,12 @@ type ServerLogState struct {
 	ServerId uint8
 	Term     uint32
 	LogIdx   uint64
+	Token    tracing.TracingToken
 }
 
 type ServerLogStateRequest struct {
-	Token tracing.TracingToken
+	ServerId uint8
+	Token    tracing.TracingToken
 }
 
 // LeaderFailOver Coord passes on this info to the
@@ -141,13 +139,8 @@ type LeaderFailOverAck struct {
 	Token    tracing.TracingToken
 }
 
-// TerminateNotification Let the servers know that kvs can
-// no longer stay functional when consensus requirements
-// are unmet
-
-type Termination struct{}
-type TerminateNotification struct {
-	Token tracing.TracingToken
+type LeaderSelectionFailed struct {
+	Msg string
 }
 
 var mu sync.Mutex
@@ -212,10 +205,17 @@ func notifyClientNewLeader(c *Coord) {
 		if err != nil {
 			fmt.Println("WARNING Could not contact client during new leader notification.")
 		} else {
-			isDone := false
-			err = client.Call("CoordListener.ChangeLeaderNode", c.Leader.ClientListenAddr, &isDone)
+			newLeaderMsg := kvslib.NewLeaderStruct{
+				Ip:        c.Leader.ClientListenAddr,
+				ServerNum: c.Leader.ServerId,
+				Token:     c.Trace.GenerateToken(),
+			}
+			clientReply := kvslib.NewLeaderChangedStruct{}
+			err = client.Call("KVS.ChangeLeaderNode", newLeaderMsg, &clientReply)
 			if err != nil {
 				fmt.Printf(" WARNING Error received when waiting for ack from client during new Leader notificationl %v\n", err.Error())
+			} else {
+				c.Trace = c.Tracer.ReceiveToken(clientReply.Token)
 			}
 		}
 	}
@@ -398,22 +398,27 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 			}
 
 			if err := verifyQuorum(c, serverFailures); err != nil {
-				os.Exit(2)
+				// os.Exit(2)
+				util.PrintfRed("\n%v\n", err.Error())
 			}
 
 			c.Trace.RecordAction(ServerFail{ServerId: failedServer})
 
 			if c.Leader.ServerId == failedServer {
 				if err := beginLeaderSelection(c, failedServer, serverFailures); err != nil {
-					fmt.Printf("FATAL could not successfully complete the leader selection protocol: %v\nExiting", err.Error())
-					os.Exit(2)
+					util.PrintfRed("FATAL could not successfully complete the leader selection protocol: %v\n", err.Error())
+					c.Trace.RecordAction(LeaderSelectionFailed{Msg: err.Error()})
+					// os.Exit(2)
+				} else {
+					notifyClientNewLeader(c)
+					fmt.Printf("New leader: %v\n", c.Leader.ServerId)
+					traceServerClusterView(c)
 				}
-				notifyClientNewLeader(c)
 				printServerClusterView(c)
-				fmt.Printf("New leader: %v\n", c.Leader.ServerId)
 			} else {
 				delete(c.ServerClusterView, failedServer)
 				printServerClusterView(c)
+				traceServerClusterView(c)
 			}
 		case serverId := <-fcheckNotifyCh2:
 			fmt.Printf("\nServer %v that was initially unreachable is now responding!!\n", serverId)
@@ -430,6 +435,7 @@ func (c *Coord) Start(clientAPIListenAddr string, serverAPIListenAddr string, lo
 				c.ServerClusterView[serverId] = serverInfo
 				delete(serverFailures, serverId)
 				printServerClusterView(c)
+				traceServerClusterView(c)
 			}
 		default:
 			// do nothing
@@ -471,19 +477,17 @@ func setFcheckAddresses(c *Coord, fcheckAddrMap map[uint8]string, localFcheckAdd
 func verifyQuorum(c *Coord, failedServersMap map[uint8]bool) error {
 	quorum := int(math.Floor(float64(c.NumServers/2))) + 1
 	if len(failedServersMap) >= quorum {
-		fmt.Println("FATAL: QUORUM OF SERVERS UNAVAILABLE. SHUTTING DOWN.")
-		c.Trace.RecordAction(Termination{})
-
-		for _, server := range c.ServerClusterView {
-			if client, err := rpc.Dial("tcp", server.CoordListenAddr); err != nil {
-				continue
-			} else {
-				terminateMsg := TerminateNotification{Token: c.Trace.GenerateToken()}
-				var ack bool
-				_ = client.Call("Server.Terminate", terminateMsg, &ack)
-			}
-		}
-		return errors.New("terminate")
+		// c.Trace.RecordAction(QuorumFailure{})
+		//for _, server := range c.ServerClusterView {
+		//	if client, err := rpc.Dial("tcp", server.CoordListenAddr); err != nil {
+		//		continue
+		//	} else {
+		//		notifyMsg := QuorumFailure{}
+		//		var ack bool
+		//		_ = client.Call("Server.QuorumFailureNotify", notifyMsg, &ack)
+		//	}
+		//}
+		return errors.New("quorum unavailable")
 	}
 	return nil
 }
@@ -500,17 +504,20 @@ func findNewLeader(c *Coord, serverFailures map[uint8]bool) (ServerInfo, error) 
 					c.Trace.RecordAction(ServerFail{ServerId: server.ServerId})
 				}
 				serverFailures[server.ServerId] = true
-				if err := verifyQuorum(c, serverFailures); err != nil {
-					os.Exit(2)
-				}
 				delete(c.ServerClusterView, server.ServerId)
+				if err := verifyQuorum(c, serverFailures); err != nil {
+					// os.Exit(2)
+					return ServerInfo{}, err
+				}
 				fmt.Println("Trying to get log state of next available server in the cluster.")
 				printServerClusterView(c)
 				continue
 			}
 
-			logStateRequest := ServerLogStateRequest{Token: c.Trace.GenerateToken()}
 			serverLogState := ServerLogState{}
+			logStateRequest := ServerLogStateRequest{ServerId: server.ServerId}
+			c.Trace.RecordAction(logStateRequest)
+			logStateRequest.Token = c.Trace.GenerateToken()
 			err = client.Call("Server.GetLogState", logStateRequest, &serverLogState)
 			if err != nil {
 				fmt.Printf("Error received when waiting for logState from server during failure protocol: %v", err.Error())
@@ -519,12 +526,14 @@ func findNewLeader(c *Coord, serverFailures map[uint8]bool) (ServerInfo, error) 
 					c.Trace.RecordAction(ServerFail{ServerId: server.ServerId})
 				}
 				serverFailures[server.ServerId] = true
-				if err := verifyQuorum(c, serverFailures); err != nil {
-					os.Exit(2)
-				}
 				delete(c.ServerClusterView, server.ServerId)
+				if err := verifyQuorum(c, serverFailures); err != nil {
+					// os.Exit(2)
+					return ServerInfo{}, err
+				}
 			} else {
 				availableServersLogState = append(availableServersLogState, serverLogState)
+				c.Trace = c.Tracer.ReceiveToken(serverLogState.Token)
 			}
 		}
 	}
@@ -555,6 +564,9 @@ func findNewLeader(c *Coord, serverFailures map[uint8]bool) (ServerInfo, error) 
 
 func beginLeaderSelection(c *Coord, failedLeaderId uint8, serverFailures map[uint8]bool) error {
 	delete(c.ServerClusterView, failedLeaderId)
+	if err := verifyQuorum(c, serverFailures); err != nil {
+		return err
+	}
 	c.TermNumber = c.TermNumber + 1
 	for len(c.ServerClusterView) > 0 {
 		newLeader, err := findNewLeader(c, serverFailures)
@@ -568,10 +580,11 @@ func beginLeaderSelection(c *Coord, failedLeaderId uint8, serverFailures map[uin
 				c.Trace.RecordAction(ServerFail{ServerId: newLeader.ServerId})
 			}
 			serverFailures[newLeader.ServerId] = true
-			if err := verifyQuorum(c, serverFailures); err != nil {
-				os.Exit(2)
-			}
 			delete(c.ServerClusterView, newLeader.ServerId)
+			if err := verifyQuorum(c, serverFailures); err != nil {
+				// os.Exit(2)
+				return err
+			}
 			fmt.Println("Retrying Leader Selection")
 			continue
 		}
@@ -597,10 +610,11 @@ func beginLeaderSelection(c *Coord, failedLeaderId uint8, serverFailures map[uin
 				c.Trace.RecordAction(ServerFail{ServerId: newLeader.ServerId})
 			}
 			serverFailures[newLeader.ServerId] = true
-			if err := verifyQuorum(c, serverFailures); err != nil {
-				os.Exit(2)
-			}
 			delete(c.ServerClusterView, newLeader.ServerId)
+			if err := verifyQuorum(c, serverFailures); err != nil {
+				// os.Exit(2)
+				return err
+			}
 			fmt.Println("Retrying Leader Selection")
 			continue
 		} else {
@@ -621,4 +635,12 @@ func printServerClusterView(c *Coord) {
 		fmt.Printf("%v, ", v.ServerId)
 	}
 	fmt.Println()
+}
+
+func traceServerClusterView(c *Coord) {
+	view := make([]uint8, 0)
+	for _, v := range c.ServerClusterView {
+		view = append(view, v.ServerId)
+	}
+	c.Trace.RecordAction(NewClusterView{View: view})
 }

@@ -56,6 +56,11 @@ type LeaderResRecvd struct {
 	ServerId uint8
 }
 
+type LeaderNodeUpdateRecvd struct {
+	ClientId string
+	ServerId uint8
+}
+
 // NotifyChannel is used for notifying the client about a mining result.
 type NotifyChannel chan ResultStruct
 
@@ -185,6 +190,7 @@ type ServerListener struct {
 
 type CoordListener struct {
 	ServerFailChan chan ServerFail
+	// Kvs            *KVS
 }
 
 type ReqQueue struct {
@@ -207,6 +213,16 @@ const (
 type AddCNLReq struct {
 	ClientId            string
 	CoordListenerIpPort string
+}
+
+type NewLeaderStruct struct {
+	Ip        string
+	ServerNum uint8
+	Token     tracing.TracingToken
+}
+
+type NewLeaderChangedStruct struct {
+	Token tracing.TracingToken
 }
 
 func NewKVS() *KVS {
@@ -267,7 +283,7 @@ func (d *KVS) Start(localTracer *tracing.Tracer, clientId string, coordIPPort st
 	d.cnl = cnl
 	d.cnl.ServerFailChan = make(chan ServerFail, 16)
 	coordRPCListener := rpc.NewServer()
-	coordRegErr := coordRPCListener.Register(cnl)
+	coordRegErr := coordRPCListener.Register(d)
 	if err = checkCriticalErr(coordRegErr, "an error registering cnl for coordRPCListener in kvslib: "); err != nil {
 		return nil, err
 	}
@@ -543,10 +559,26 @@ func (tpl *ServerListener) PutSuccess(putRes PutResponse, isDone *bool) error {
 	return nil
 }
 
-func (cnl *CoordListener) ChangeLeaderNode(newServerIPPort string, isDone *bool) error {
-	cnl.ServerFailChan <- ServerFail{Leader, newServerIPPort}
+/*func (cnl *CoordListener) ChangeLeaderNode(newServerIPData NewLeaderStruct, isDone *bool) error {
+	tracer := tracing.
+	cnl.ServerFailChan <- ServerFail{Leader, newServerIPData.ip}
 	*isDone = true
-	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPPort)
+	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPData.ip)
+	return nil
+}*/
+
+func (d *KVS) ChangeLeaderNode(newServerIPData NewLeaderStruct, reply *NewLeaderChangedStruct) error {
+	newTrace := d.kTracer.ReceiveToken(newServerIPData.Token)
+	newTrace.RecordAction(LeaderNodeUpdateRecvd{
+		ClientId: d.clientId,
+		ServerId: newServerIPData.ServerNum,
+	})
+
+	d.cnl.ServerFailChan <- ServerFail{Leader, newServerIPData.Ip}
+	*reply = NewLeaderChangedStruct{
+		Token: newTrace.GenerateToken(),
+	}
+	util.PrintfGreen("\nReceived new leader: %v\n", newServerIPData.ServerNum)
 	return nil
 }
 

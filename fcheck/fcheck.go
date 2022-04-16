@@ -398,7 +398,7 @@ func StartMonitoringServers(arg StartMonitoringConfig) (notifyCh <-chan FailureD
 							f.Sync()
 
 							failureDetected := FailureDetected{UDPIpPort: conn.RemoteAddr().String(), Timestamp: time.Now(), ServerId: nonce}
-							fmt.Printf("Sending failure notification to notifyChannel inside the go routine: %v\n", failureDetected)
+							// fmt.Printf("Sending failure notification to notifyChannel inside the go routine: %v\n", failureDetected)
 							serverUnresponsive = true
 							failureChan <- failureDetected
 						}

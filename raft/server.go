@@ -524,13 +524,9 @@ func (s *Server) GetLogState(request ServerLogStateRequest, reply *ServerLogStat
 		Term:     prevLogEntry.Term,
 		LogIdx:   prevLogEntry.Index,
 	}
-	return nil
-}
-
-// Terminate If coord detects majority failures, system shuts down
-func (s *Server) Terminate(notification TerminateNotification, reply *bool) error {
-	fmt.Println("FATAL Quorum of nodes unavailable. Shutting down")
-	os.Exit(2)
+	cTrace := s.tracer.ReceiveToken(request.Token)
+	cTrace.RecordAction(*reply)
+	reply.Token = cTrace.GenerateToken()
 	return nil
 }
 
@@ -1112,6 +1108,9 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 
 	s.logMu.Lock()
 	defer s.logMu.Unlock()
+	defer func() {
+		s.appendEntriesDone <- true
+	}()
 
 	if arg.Entries != nil {
 		fmt.Printf("(Follower AppendEntries) Received AppendEntry=%v\n", arg)
@@ -1206,7 +1205,7 @@ func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) 
 	reply.Success = true
 	trace.RecordAction(AppendEntriesResponseSent(*reply))
 	reply.Token = trace.GenerateToken()
-	s.appendEntriesDone <- true
+
 	return nil
 }
 
