@@ -87,9 +87,9 @@ type AppendEntriesResponseSent AppendEntriesReply
 type AppendEntriesResponseRecvd AppendEntriesReply
 
 type ForceFollowerLog struct {
-	serverIndex uint8
-	nextIndex   uint64
-	matchIndex  uint64
+	ServerIndex uint8
+	NextIndex   uint64
+	MatchIndex  uint64
 }
 
 type BecameLeader struct {
@@ -925,9 +925,9 @@ func (s *Server) sendAppendEntrySync(peer ServerInfo, arg *AppendEntriesArg, tra
 // Succeeds or retries indefinitely
 func (s *Server) forceUpdateFollowerLog(peerIndex uint8, done chan<- bool, trace *tracing.Trace) {
 	trace.RecordAction(ForceFollowerLog{
-		serverIndex: peerIndex,
-		nextIndex:   s.nextIndex[peerIndex-1],
-		matchIndex:  s.matchIndex[peerIndex-1],
+		ServerIndex: peerIndex,
+		NextIndex:   s.nextIndex[peerIndex-1],
+		MatchIndex:  s.matchIndex[peerIndex-1],
 	})
 
 	lastLogEntry := s.log[s.nextIndex[peerIndex-1]-1]

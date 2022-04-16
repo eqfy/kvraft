@@ -205,10 +205,17 @@ func notifyClientNewLeader(c *Coord) {
 		if err != nil {
 			fmt.Println("WARNING Could not contact client during new leader notification.")
 		} else {
-			isDone := false
-			err = client.Call("CoordListener.ChangeLeaderNode", c.Leader.ClientListenAddr, &isDone)
+			newLeaderMsg := kvslib.NewLeaderStruct{
+				Ip:        c.Leader.ClientListenAddr,
+				ServerNum: c.Leader.ServerId,
+				Token:     c.Trace.GenerateToken(),
+			}
+			clientReply := kvslib.NewLeaderChangedStruct{}
+			err = client.Call("KVS.ChangeLeaderNode", newLeaderMsg, &clientReply)
 			if err != nil {
 				fmt.Printf(" WARNING Error received when waiting for ack from client during new Leader notificationl %v\n", err.Error())
+			} else {
+				c.Trace = c.Tracer.ReceiveToken(clientReply.Token)
 			}
 		}
 	}
