@@ -214,7 +214,7 @@ type Command struct {
 type CommandKind int
 
 const (
-	NoOp CommandKind = iota // used only internally
+	NoOp CommandKind = iota // used only internally, cannot be issued by client
 	Put
 	Get
 )
@@ -575,7 +575,7 @@ func (s *Server) Get(arg GetRequest, resp *GetResponse) error {
 				resp.Key = arg.Key
 				resp.Value = lastClientCmd.Val
 				resp.Token = gtrace.GenerateToken()
-				fmt.Printf("(Leader Put): received and resolved duplicate put: %v\n", *resp)
+				fmt.Printf("(Leader Put): received and resolved duplicate get: %v\n", *resp)
 				return nil
 			} else {
 				util.PrintfRed("ERROR in Server: kv has committed a entry not in the log")
@@ -940,7 +940,7 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 	s.commitIndex = uint64(len(s.log) - 1)
 	command := s.doCommit(errorChan)
 	fmt.Printf("(Leader AppendEntries): Successfully replicated entry=%v on majority, commitIndex updated to be %d\n", newEntry, s.commitIndex)
-	// simulateLeaderFailedBeforeReplyingToClient(s)
+	// simulateLeaderFailedBeforeReplyingToClient(s)  // Uncomment to test duplicate request case!
 	clientCommand.done <- command
 }
 
