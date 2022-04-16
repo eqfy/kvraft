@@ -34,6 +34,58 @@ client.Put(key_name, key_value)
 
 Download the generated `shiviz_output.log` file and to visualize it with https://bestchai.bitbucket.io/shiviz/
 
+## Testing server failure
+
+The system can survive up to N/2 - 1 failures. To test for server failure, can terminate servers (fail-stop failure). If a leader fails, then coord will designate a new leader, and kvslib will failover to the new leader. 
+
+### Example output
+Testing with 20 puts and gets as specified in `cmd/client/main.go`. 
+1. Fail server 1 (leader), which fails after sending request Put(k13,val13) at log index 27
+```
+(Leader Put): received client command={{1 k13 val13 {1 27}} 0xc0003b70e0}
+(Leader AppendEntries): Sending AppendEntries={1 1 26 1 [{1 Put(k13,val13) 27}] 26 []} to followers.
+2022/04/15 21:02:51 [server1] TraceID=5400200269340830504 CreateTrace
+2022/04/15 21:02:51 [server1] TraceID=6000395523022580870 CreateTrace
+2022/04/15 21:02:51 [server1] TraceID=6000395523022580870 AppendEntriesRequestSent Term=1, LeaderId=1, PrevLogIndex=26, PrevLogTerm=1, Entries=[{1 Put(k13,val13) 27}], LeaderCommit=26, Token=[]
+2022/04/15 21:02:51 [server1] TraceID=6000395523022580870 GenerateTokenTrace Token=[167 115 101 114 118 101 114 49 207 83 69 175 239 205 154 236 134 133 167 99 108 105 101 110 116 49 205 9 125 167 115 101 114 118 101 114 49 205 14 253 165 99 111 111 114 100 205 1 18 167 115 101 114 118 101 114 50 205 23 51 167 115 101 114 118 101 114 51 205 15 54]
+2022/04/15 21:02:51 [server1] TraceID=5400200269340830504 AppendEntriesRequestSent Term=1, LeaderId=1, PrevLogIndex=26, PrevLogTerm=1, Entries=[{1 Put(k13,val13) 27}], LeaderCommit=26, Token=[]
+2022/04/15 21:02:51 [server1] TraceID=5400200269340830504 GenerateTokenTrace Token=[167 115 101 114 118 101 114 49 207 74 241 93 136 146 7 107 40 133 167 115 101 114 118 101 114 49 205 14 255 165 99 111 111 114 100 205 1 18 167 115 101 114 118 101 114 50 205 23 51 167 115 101 114 118 101 114 51 205 15 54 167 99 108 105 101 110 116 49 205 9 125]
+2022/04/15 21:02:51 [server1] TraceID=5400200269340830504 ReceiveTokenTrace Token=[167 115 101 114 118 101 114 50 207 74 241 93 136 146 7 107 40 133 165 99 111 111 114 100 205 1 18 167 115 101 114 118 101 114 49 205 14 255 167 115 101 114 118 101 114 51 205 15 54 167 99 108 105 101 110 116 49 205 9 125 167 115 101 114 118 101 114 50 205 23 55]
+2022/04/15 21:02:51 [server1] TraceID=5400200269340830504 AppendEntriesResponseRecvd Term=1, Success=true, Token=[167 115 101 114 118 101 114 50 207 74 241 93 136 146 7 107 40 133 165 99 111 111 114 100 205 1 18 167 115 101 114 118 101 114 49 205 14 255 167 115 101 114 118 101 114 51 205 15 54 167 99 108 105 101 110 116 49 205 9 125 167 115 101 114 118 101 114 50 205 23 55]
+^Csignal: interrupt
+```
+2. Coord detects failure
+```
+ServerClusterView: 2, 3, 
+New leader: 2
+```
+3. Server 2 becomes new leader
+```
+Received leader failure notification. I'm the new leader.
+2022/04/15 21:02:51 [server2] TraceID=5908848541286080979 ReceiveTokenTrace Token=[165 99 111 111 114 100 207 82 0 114 113 30 241 33 211 133 167 115 101 114 118 101 114 51 205 14 204 167 99 108 105 101 110 116 49 205 8 246 165 99 111 111 114 100 205 1 23 167 115 101 114 118 101 114 49 205 13 137 167 115 101 114 118 101 114 50 205 22 201]
+2022/04/15 21:02:51 [server2] TraceID=5908848541286080979 ServerFailRecvd FailedServerId=1
+2022/04/15 21:02:51 [server2] TraceID=4778927783780588014 NoOpRequest
+2022/04/15 21:02:51 [server2] TraceID=5908848541286080979 GenerateTokenTrace Token=[167 115 101 114 118 101 114 50 207 82 0 114 113 30 241 33 211 133 167 115 101 114 118 101 114 49 205 14 255 167 115 101 114 118 101 114 51 205 15 54 167 99 108 105 101 110 116 49 205 9 125 167 115 101 114 118 101 114 50 205 23 59 165 99 111 111 114 100 205 1 23]
+2022/04/15 21:02:51 [server2] TraceID=4778927783780588014 BecameLeader ServerId=2
+(Leader AppendEntries): Sending AppendEntries={2 2 27 1 [{2 No-Op 28}] 26 []} to followers.
+```
+4. Client sends future requests to server 2 (i.e., requests onwards from Get(k13)).
+5. Observe consistent logs on server 3 during fail over
+```
+...
+25. Term=1, Index=25, Entry=Put(k12,val12)
+26. Term=1, Index=26, Entry=Get(k12)
+27. Term=1, Index=27, Entry=Put(k13,val13)
+28. Term=2, Index=28, Entry=No-Op
+29. Term=2, Index=29, Entry=Get(k13)
+30. Term=2, Index=30, Entry=Put(k14,val14)
+31. Term=2, Index=31, Entry=Get(k14)
+32. Term=2, Index=32, Entry=Put(k15,val15)
+33. Term=2, Index=33, Entry=Get(k15)
+34. Term=2, Index=34, Entry=Put(k16,val16)
+35. Term=2, Index=35, Entry=Get(k16)
+...
+```
 ## Testing each component on its own
 
 ### Coord (network partitions)
