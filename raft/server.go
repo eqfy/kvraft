@@ -868,7 +868,7 @@ func (s *Server) sendHeartbeats() {
 						continue
 					}
 					peerReplies := make(chan bool, len(s.Peers)-1)
-					go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace())
+					go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace(), true)
 				}
 
 			case <-s.stopHeartbeats:
@@ -930,7 +930,7 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 		if peer.ServerId == s.ServerId {
 			continue
 		}
-		go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace())
+		go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace(), false)
 	}
 	/* Can return once we have a majority*/
 	<-majorityReplied
@@ -964,7 +964,7 @@ func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 }
 
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
-func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool, trace *tracing.Trace) error {
+func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool, trace *tracing.Trace, isHeartbeat bool) error {
 	trace.RecordAction(AppendEntriesRequestSent(*args))
 	args.Token = trace.GenerateToken()
 
@@ -983,8 +983,11 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 	for {
 		peerConn.Go("Server.AppendEntries", args, &reply, done)
 		select {
-		/* leader retries indefinitely if can't reach follower*/
+		/* leader retries indefinitely if can't reach follower, unless its a heartbeat, then just return since non-eseential message*/
 		case <-time.After(20 * time.Second):
+			if isHeartbeat {
+				return nil
+			}
 			continue
 		case call := <-done:
 			if call.Error == nil {
