@@ -1,0 +1,582 @@
+(?<host>\S*) (?<clock>{.*})\n(?<event>.*)
+
+coord {"coord":1}
+7804235958313504031 CreateTrace {}
+coord {"coord":2}
+7804235958313504031 CoordStart {}
+client2 {"client2":1}
+7401998442767600878 CreateTrace {}
+client2 {"client2":2}
+7401998442767600878 GenerateTokenTrace {"Token":"p2NsaWVudDLPZrkuXcEoTO6Bp2NsaWVudDIC"}
+client2 {"client2":3}
+7401998442767600878 KvslibStart {"ClientId":"2"}
+client2 {"client2":4}
+7401998442767600878 LeaderReq {"ClientId":"2"}
+client2 {"client2":5}
+7401998442767600878 GenerateTokenTrace {"Token":"p2NsaWVudDLPZrkuXcEoTO6Bp2NsaWVudDIF"}
+client1 {"client1":1}
+4429675673713441190 CreateTrace {}
+client1 {"client1":2}
+4429675673713441190 GenerateTokenTrace {"Token":"p2NsaWVudDHPPXlejkng+aaBp2NsaWVudDEC"}
+client1 {"client1":3}
+4429675673713441190 KvslibStart {"ClientId":"1"}
+client1 {"client1":4}
+4429675673713441190 LeaderReq {"ClientId":"1"}
+client1 {"client1":5}
+4429675673713441190 GenerateTokenTrace {"Token":"p2NsaWVudDHPPXlejkng+aaBp2NsaWVudDEF"}
+server3 {"server3":1}
+1168172316029545133 CreateTrace {}
+server3 {"server3":2}
+1168172316029545133 ServerStart {"ServerId":3}
+server3 {"server3":3}
+1168172316029545133 ServerJoining {"ServerId":3}
+server3 {"server3":4}
+1168172316029545133 GenerateTokenTrace {"Token":"p3NlcnZlcjPPEDYuiD1i6q2Bp3NlcnZlcjME"}
+coord {"coord":3, "server3":4}
+1168172316029545133 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPEDYuiD1i6q2Bp3NlcnZlcjME"}
+coord {"server3":4, "coord":4}
+1168172316029545133 ServerJoiningRecvd {"ServerId":3}
+coord {"coord":5, "server3":4}
+1168172316029545133 GenerateTokenTrace {"Token":"pWNvb3JkzxA2Log9YuqtgqdzZXJ2ZXIzBKVjb29yZAU="}
+server3 {"server3":5, "coord":5}
+1168172316029545133 ReceiveTokenTrace {"Token":"pWNvb3JkzxA2Log9YuqtgqdzZXJ2ZXIzBKVjb29yZAU="}
+server2 {"server2":1}
+1746330261307925272 CreateTrace {}
+server2 {"server2":2}
+1746330261307925272 ServerStart {"ServerId":2}
+server2 {"server2":3}
+1746330261307925272 ServerJoining {"ServerId":2}
+server2 {"server2":4}
+1746330261307925272 GenerateTokenTrace {"Token":"p3NlcnZlcjLPGDw2HsXGIxiBp3NlcnZlcjIE"}
+coord {"server3":4, "server2":4, "coord":6}
+1746330261307925272 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPGDw2HsXGIxiBp3NlcnZlcjIE"}
+coord {"server3":4, "server2":4, "coord":7}
+1746330261307925272 ServerJoiningRecvd {"ServerId":2}
+coord {"coord":8, "server3":4, "server2":4}
+1746330261307925272 GenerateTokenTrace {"Token":"pWNvb3Jkzxg8Nh7FxiMYg6dzZXJ2ZXIzBKdzZXJ2ZXIyBKVjb29yZAg="}
+server2 {"coord":8, "server2":5, "server3":4}
+1746330261307925272 ReceiveTokenTrace {"Token":"pWNvb3Jkzxg8Nh7FxiMYg6dzZXJ2ZXIzBKdzZXJ2ZXIyBKVjb29yZAg="}
+server1 {"server1":1}
+2572079135474306195 CreateTrace {}
+server1 {"server1":2}
+2572079135474306195 ServerStart {"ServerId":1}
+server1 {"server1":3}
+2572079135474306195 ServerJoining {"ServerId":1}
+server1 {"server1":4}
+2572079135474306195 GenerateTokenTrace {"Token":"p3NlcnZlcjHPI7HcWKQjzJOBp3NlcnZlcjEE"}
+coord {"coord":9, "server3":4, "server2":4, "server1":4}
+2572079135474306195 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPI7HcWKQjzJOBp3NlcnZlcjEE"}
+coord {"server2":4, "server1":4, "coord":10, "server3":4}
+2572079135474306195 ServerJoiningRecvd {"ServerId":1}
+coord {"coord":11, "server3":4, "server2":4, "server1":4}
+2572079135474306195 GenerateTokenTrace {"Token":"pWNvb3JkzyOx3FikI8yThKVjb29yZAunc2VydmVyMwSnc2VydmVyMgSnc2VydmVyMQQ="}
+server1 {"coord":11, "server3":4, "server2":4, "server1":5}
+2572079135474306195 ReceiveTokenTrace {"Token":"pWNvb3JkzyOx3FikI8yThKVjb29yZAunc2VydmVyMwSnc2VydmVyMgSnc2VydmVyMQQ="}
+server2 {"server3":4, "coord":8, "server2":6}
+1746330261307925272 ServerJoined {"ServerId":2}
+server2 {"server2":7, "server3":4, "coord":8}
+1746330261307925272 GenerateTokenTrace {"Token":"p3NlcnZlcjLPGDw2HsXGIxiDpWNvb3JkCKdzZXJ2ZXIyB6dzZXJ2ZXIzBA=="}
+server2 {"server3":4, "coord":8, "server2":8}
+1746330261307925272 BecameFollower {"ServerId":2}
+coord {"coord":12, "server3":4, "server2":7, "server1":4}
+1746330261307925272 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPGDw2HsXGIxiDpWNvb3JkCKdzZXJ2ZXIyB6dzZXJ2ZXIzBA=="}
+coord {"server2":7, "server1":4, "coord":13, "server3":4}
+1746330261307925272 ServerJoinedRecvd {"ServerId":2}
+coord {"server3":4, "server2":7, "server1":4, "coord":14}
+1746330261307925272 GenerateTokenTrace {"Token":"pWNvb3Jkzxg8Nh7FxiMYhKdzZXJ2ZXIyB6dzZXJ2ZXIxBKVjb29yZA6nc2VydmVyMwQ="}
+server2 {"server2":9, "server3":4, "coord":14, "server1":4}
+1746330261307925272 ReceiveTokenTrace {"Token":"pWNvb3Jkzxg8Nh7FxiMYhKdzZXJ2ZXIyB6dzZXJ2ZXIxBKVjb29yZA6nc2VydmVyMwQ="}
+server3 {"coord":5, "server3":6}
+1168172316029545133 ServerJoined {"ServerId":3}
+server3 {"server3":7, "coord":5}
+1168172316029545133 GenerateTokenTrace {"Token":"p3NlcnZlcjPPEDYuiD1i6q2Cp3NlcnZlcjMHpWNvb3JkBQ=="}
+server3 {"server3":8, "coord":5}
+1168172316029545133 BecameFollower {"ServerId":3}
+coord {"server3":7, "server2":7, "server1":4, "coord":15}
+1168172316029545133 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPEDYuiD1i6q2Cp3NlcnZlcjMHpWNvb3JkBQ=="}
+coord {"coord":16, "server3":7, "server2":7, "server1":4}
+1168172316029545133 ServerJoinedRecvd {"ServerId":3}
+coord {"coord":17, "server3":7, "server2":7, "server1":4}
+1168172316029545133 GenerateTokenTrace {"Token":"pWNvb3JkzxA2Log9YuqthKdzZXJ2ZXIxBKVjb29yZBGnc2VydmVyMwenc2VydmVyMgc="}
+server3 {"coord":17, "server1":4, "server2":7, "server3":9}
+1168172316029545133 ReceiveTokenTrace {"Token":"pWNvb3JkzxA2Log9YuqthKdzZXJ2ZXIxBKVjb29yZBGnc2VydmVyMwenc2VydmVyMgc="}
+server1 {"server1":6, "coord":11, "server3":4, "server2":4}
+2572079135474306195 ServerJoined {"ServerId":1}
+server1 {"server1":7, "coord":11, "server3":4, "server2":4}
+2572079135474306195 GenerateTokenTrace {"Token":"p3NlcnZlcjHPI7HcWKQjzJOEp3NlcnZlcjEHpWNvb3JkC6dzZXJ2ZXIzBKdzZXJ2ZXIyBA=="}
+server1 {"coord":11, "server3":4, "server2":4, "server1":8}
+2572079135474306195 BecameLeader {"ServerId":1}
+coord {"server2":7, "server1":7, "coord":18, "server3":7}
+2572079135474306195 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPI7HcWKQjzJOEp3NlcnZlcjEHpWNvb3JkC6dzZXJ2ZXIzBKdzZXJ2ZXIyBA=="}
+coord {"server2":7, "server1":7, "coord":19, "server3":7}
+2572079135474306195 ServerJoinedRecvd {"ServerId":1}
+coord {"server1":7, "coord":20, "server3":7, "server2":7}
+2572079135474306195 GenerateTokenTrace {"Token":"pWNvb3JkzyOx3FikI8yThKVjb29yZBSnc2VydmVyMwenc2VydmVyMgenc2VydmVyMQc="}
+server1 {"server2":7, "server1":9, "coord":20, "server3":7}
+2572079135474306195 ReceiveTokenTrace {"Token":"pWNvb3JkzyOx3FikI8yThKVjb29yZBSnc2VydmVyMwenc2VydmVyMgenc2VydmVyMQc="}
+coord {"server2":7, "server1":7, "coord":21, "server3":7}
+7804235958313504031 AllServersJoined {}
+coord {"server2":7, "server1":7, "client2":5, "coord":22, "server3":7}
+7401998442767600878 ReceiveTokenTrace {"Token":"p2NsaWVudDLPZrkuXcEoTO6Bp2NsaWVudDIF"}
+coord {"client2":5, "coord":23, "server3":7, "server2":7, "server1":7}
+7401998442767600878 LeaderReqRecvd {"ClientId":"2"}
+coord {"server2":7, "server1":7, "client2":5, "coord":24, "server3":7}
+7401998442767600878 LeaderRes {"ClientId":"2","ServerId":1}
+coord {"client2":5, "coord":25, "server3":7, "server2":7, "server1":7}
+7401998442767600878 GenerateTokenTrace {"Token":"pWNvb3Jkz2a5Ll3BKEzuhaVjb29yZBmnc2VydmVyMwenc2VydmVyMgenc2VydmVyMQenY2xpZW50MgU="}
+client2 {"server2":7, "server1":7, "client2":6, "coord":25, "server3":7}
+7401998442767600878 ReceiveTokenTrace {"Token":"pWNvb3Jkz2a5Ll3BKEzuhaVjb29yZBmnc2VydmVyMwenc2VydmVyMgenc2VydmVyMQenY2xpZW50MgU="}
+coord {"server2":7, "server1":7, "client2":5, "client1":5, "coord":26, "server3":7}
+4429675673713441190 ReceiveTokenTrace {"Token":"p2NsaWVudDHPPXlejkng+aaBp2NsaWVudDEF"}
+client2 {"client2":7, "coord":25, "server3":7, "server2":7, "server1":7}
+7401998442767600878 LeaderResRecvd {"ClientId":"2","ServerId":1}
+coord {"client2":5, "client1":5, "coord":27, "server3":7, "server2":7, "server1":7}
+4429675673713441190 LeaderReqRecvd {"ClientId":"1"}
+client2 {"server3":7, "server2":7, "server1":7, "client2":8, "coord":25}
+7410932739055688565 CreateTrace {}
+coord {"client1":5, "coord":28, "server3":7, "server2":7, "server1":7, "client2":5}
+4429675673713441190 LeaderRes {"ClientId":"1","ServerId":1}
+client2 {"client2":9, "coord":25, "server3":7, "server2":7, "server1":7}
+7410932739055688565 Put {"ClientId":"2","OpId":1,"Key":"k0","Value":"val0"}
+client2 {"server1":7, "client2":10, "coord":25, "server3":7, "server2":7}
+7410932739055688565 GenerateTokenTrace {"Token":"p2NsaWVudDLPZtjsD7W6G3WFp3NlcnZlcjEHp2NsaWVudDIKpWNvb3JkGadzZXJ2ZXIzB6dzZXJ2ZXIyBw=="}
+coord {"coord":29, "server3":7, "server2":7, "server1":7, "client2":5, "client1":5}
+4429675673713441190 GenerateTokenTrace {"Token":"pWNvb3Jkzz15Xo5J4PmmhqdjbGllbnQyBadjbGllbnQxBaVjb29yZB2nc2VydmVyMwenc2VydmVyMgenc2VydmVyMQc="}
+server1 {"server1":10, "coord":25, "server3":7, "server2":7, "client2":10}
+7410932739055688565 ReceiveTokenTrace {"Token":"p2NsaWVudDLPZtjsD7W6G3WFp3NlcnZlcjEHp2NsaWVudDIKpWNvb3JkGadzZXJ2ZXIzB6dzZXJ2ZXIyBw=="}
+client1 {"client1":6, "server3":7, "server2":7, "server1":7, "client2":5, "coord":29}
+4429675673713441190 ReceiveTokenTrace {"Token":"pWNvb3Jkzz15Xo5J4PmmhqdjbGllbnQyBadjbGllbnQxBaVjb29yZB2nc2VydmVyMwenc2VydmVyMgenc2VydmVyMQc="}
+server1 {"server3":7, "server2":7, "client2":10, "server1":11, "coord":25}
+7410932739055688565 PutRecvd {"ClientId":"2","OpId":1,"Key":"k0","Value":"val0"}
+client1 {"client1":7, "server3":7, "server2":7, "server1":7, "client2":5, "coord":29}
+4429675673713441190 LeaderResRecvd {"ClientId":"1","ServerId":1}
+server1 {"server2":7, "client2":10, "server1":12, "coord":25, "server3":7}
+6432297687609809375 CreateTrace {}
+client1 {"client2":5, "coord":29, "client1":8, "server3":7, "server2":7, "server1":7}
+6509181973296783949 CreateTrace {}
+server1 {"client2":10, "server1":13, "coord":25, "server3":7, "server2":7}
+656212836517208252 CreateTrace {}
+client1 {"client1":9, "server3":7, "server2":7, "server1":7, "client2":5, "coord":29}
+6509181973296783949 Put {"ClientId":"1","OpId":1,"Key":"k0","Value":"val0"}
+client1 {"server3":7, "server2":7, "server1":7, "client2":5, "coord":29, "client1":10}
+6509181973296783949 GenerateTokenTrace {"Token":"p2NsaWVudDHPWlVChIC7Ik2Gp2NsaWVudDEKp3NlcnZlcjMHp3NlcnZlcjIHp3NlcnZlcjEHp2NsaWVudDIFpWNvb3JkHQ=="}
+server1 {"client2":10, "server1":14, "coord":25, "server3":7, "server2":7}
+656212836517208252 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":0,"PrevLogTerm":0,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"2","OpId":1}},"Index":1}],"LeaderCommit":0,"Token":""}
+server1 {"server2":7, "client2":10, "server1":15, "coord":25, "server3":7}
+6432297687609809375 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":0,"PrevLogTerm":0,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"2","OpId":1}},"Index":1}],"LeaderCommit":0,"Token":""}
+server1 {"server1":16, "coord":25, "server3":7, "server2":7, "client2":10}
+6432297687609809375 GenerateTokenTrace {"Token":"p3NlcnZlcjHPWUQcqseMmd+Fp2NsaWVudDIKp3NlcnZlcjEQpWNvb3JkGadzZXJ2ZXIzB6dzZXJ2ZXIyBw=="}
+server1 {"server3":7, "server2":7, "client2":10, "server1":17, "coord":25}
+656212836517208252 GenerateTokenTrace {"Token":"p3NlcnZlcjHPCRtWGRmo4LyFp3NlcnZlcjIHp2NsaWVudDIKp3NlcnZlcjERpWNvb3JkGadzZXJ2ZXIzBw=="}
+server2 {"server1":16, "client2":10, "server2":10, "server3":7, "coord":25}
+6432297687609809375 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPWUQcqseMmd+Fp2NsaWVudDIKp3NlcnZlcjEQpWNvb3JkGadzZXJ2ZXIzB6dzZXJ2ZXIyBw=="}
+server1 {"server1":18, "coord":29, "server3":7, "server2":7, "client2":10, "client1":10}
+6509181973296783949 ReceiveTokenTrace {"Token":"p2NsaWVudDHPWlVChIC7Ik2Gp2NsaWVudDEKp3NlcnZlcjMHp3NlcnZlcjIHp3NlcnZlcjEHp2NsaWVudDIFpWNvb3JkHQ=="}
+server1 {"server1":19, "coord":29, "server3":7, "server2":7, "client2":10, "client1":10}
+6509181973296783949 PutRecvd {"ClientId":"1","OpId":1,"Key":"k0","Value":"val0"}
+server3 {"server2":7, "client2":10, "server3":10, "coord":25, "server1":17}
+656212836517208252 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPCRtWGRmo4LyFp3NlcnZlcjIHp2NsaWVudDIKp3NlcnZlcjERpWNvb3JkGadzZXJ2ZXIzBw=="}
+server2 {"client2":10, "server2":11, "server3":7, "coord":25, "server1":16}
+6432297687609809375 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":0,"PrevLogTerm":0,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"2","OpId":1}},"Index":1}],"LeaderCommit":0,"Token":"p3NlcnZlcjHPWUQcqseMmd+Fp2NsaWVudDIKp3NlcnZlcjEQpWNvb3JkGadzZXJ2ZXIzB6dzZXJ2ZXIyBw=="}
+server2 {"coord":25, "server1":16, "client2":10, "server2":12, "server3":7}
+6432297687609809375 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server3 {"server2":7, "client2":10, "server3":11, "coord":25, "server1":17}
+656212836517208252 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":0,"PrevLogTerm":0,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"2","OpId":1}},"Index":1}],"LeaderCommit":0,"Token":"p3NlcnZlcjHPCRtWGRmo4LyFp3NlcnZlcjIHp2NsaWVudDIKp3NlcnZlcjERpWNvb3JkGadzZXJ2ZXIzBw=="}
+server2 {"server3":7, "coord":25, "server1":16, "client2":10, "server2":13}
+6432297687609809375 GenerateTokenTrace {"Token":"p3NlcnZlcjLPWUQcqseMmd+Fp3NlcnZlcjINp3NlcnZlcjMHpWNvb3JkGadzZXJ2ZXIxEKdjbGllbnQyCg=="}
+server3 {"server2":7, "client2":10, "server3":12, "coord":25, "server1":17}
+656212836517208252 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server1 {"client1":10, "server1":20, "coord":29, "server3":7, "server2":13, "client2":10}
+6432297687609809375 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPWUQcqseMmd+Fp3NlcnZlcjINp3NlcnZlcjMHpWNvb3JkGadzZXJ2ZXIxEKdjbGllbnQyCg=="}
+server1 {"server1":21, "coord":29, "server3":7, "server2":13, "client2":10, "client1":10}
+6432297687609809375 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPWUQcqseMmd+Fp3NlcnZlcjINp3NlcnZlcjMHpWNvb3JkGadzZXJ2ZXIxEKdjbGllbnQyCg=="}
+server3 {"server3":13, "coord":25, "server1":17, "server2":7, "client2":10}
+656212836517208252 GenerateTokenTrace {"Token":"p3NlcnZlcjPPCRtWGRmo4LyFp3NlcnZlcjMNpWNvb3JkGadzZXJ2ZXIxEadzZXJ2ZXIyB6djbGllbnQyCg=="}
+server1 {"client2":10, "client1":10, "server1":22, "coord":29, "server3":7, "server2":13}
+3001699344188235473 CreateTrace {}
+server1 {"server1":23, "coord":29, "server3":7, "server2":13, "client2":10, "client1":10}
+8597769311805223550 CreateTrace {}
+server1 {"server1":24, "coord":29, "server3":7, "server2":13, "client2":10, "client1":10}
+8597769311805223550 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":1,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"1","OpId":1}},"Index":2}],"LeaderCommit":1,"Token":""}
+server1 {"server3":7, "server2":13, "client2":10, "client1":10, "server1":25, "coord":29}
+8597769311805223550 GenerateTokenTrace {"Token":"p3NlcnZlcjHPd1Fpotrnsn6Gp3NlcnZlcjEZpWNvb3JkHadzZXJ2ZXIzB6dzZXJ2ZXIyDadjbGllbnQyCqdjbGllbnQxCg=="}
+server1 {"server1":26, "coord":29, "server3":7, "server2":13, "client2":10, "client1":10}
+3001699344188235473 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":1,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"1","OpId":1}},"Index":2}],"LeaderCommit":1,"Token":""}
+server3 {"server3":14, "coord":29, "server1":25, "server2":13, "client2":10, "client1":10}
+8597769311805223550 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPd1Fpotrnsn6Gp3NlcnZlcjEZpWNvb3JkHadzZXJ2ZXIzB6dzZXJ2ZXIyDadjbGllbnQyCqdjbGllbnQxCg=="}
+server1 {"server2":13, "client2":10, "client1":10, "server1":27, "coord":29, "server3":13}
+656212836517208252 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPCRtWGRmo4LyFp3NlcnZlcjMNpWNvb3JkGadzZXJ2ZXIxEadzZXJ2ZXIyB6djbGllbnQyCg=="}
+server1 {"server1":28, "coord":29, "server3":13, "server2":13, "client2":10, "client1":10}
+7410932739055688565 PutCommitted {"ClientId":"2","OpId":1,"Key":"k0","Value":"val0"}
+server3 {"coord":29, "server1":25, "server2":13, "client2":10, "client1":10, "server3":15}
+8597769311805223550 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":1,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"1","OpId":1}},"Index":2}],"LeaderCommit":1,"Token":"p3NlcnZlcjHPd1Fpotrnsn6Gp3NlcnZlcjEZpWNvb3JkHadzZXJ2ZXIzB6dzZXJ2ZXIyDadjbGllbnQyCqdjbGllbnQxCg=="}
+server1 {"server1":29, "coord":29, "server3":13, "server2":13, "client2":10, "client1":10}
+3001699344188235473 GenerateTokenTrace {"Token":"p3NlcnZlcjHPKagtplzc3tGGp3NlcnZlcjINp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjEdpWNvb3JkHadzZXJ2ZXIzDQ=="}
+server3 {"client1":10, "server3":16, "coord":29, "server1":25, "server2":13, "client2":10}
+8597769311805223550 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server3 {"server1":25, "server2":13, "client2":10, "client1":10, "server3":17, "coord":29}
+8597769311805223550 GenerateTokenTrace {"Token":"p3NlcnZlcjPPd1Fpotrnsn6Gp3NlcnZlcjINp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjMRpWNvb3JkHadzZXJ2ZXIxGQ=="}
+server1 {"server3":13, "server2":13, "client2":10, "client1":10, "server1":30, "coord":29}
+656212836517208252 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPCRtWGRmo4LyFp3NlcnZlcjMNpWNvb3JkGadzZXJ2ZXIxEadzZXJ2ZXIyB6djbGllbnQyCg=="}
+server2 {"server2":14, "server3":13, "coord":29, "server1":29, "client2":10, "client1":10}
+3001699344188235473 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPKagtplzc3tGGp3NlcnZlcjINp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjEdpWNvb3JkHadzZXJ2ZXIzDQ=="}
+server1 {"client2":10, "client1":10, "server1":31, "coord":29, "server3":13, "server2":13}
+7410932739055688565 GenerateTokenTrace {"Token":"p3NlcnZlcjHPZtjsD7W6G3WGp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjEfpWNvb3JkHadzZXJ2ZXIzDadzZXJ2ZXIyDQ=="}
+server2 {"server2":15, "server3":13, "coord":29, "server1":29, "client2":10, "client1":10}
+3001699344188235473 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":1,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k0","Val":"val0","ClientInfo":{"ClientId":"1","OpId":1}},"Index":2}],"LeaderCommit":1,"Token":"p3NlcnZlcjHPKagtplzc3tGGp3NlcnZlcjINp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjEdpWNvb3JkHadzZXJ2ZXIzDQ=="}
+server2 {"coord":29, "server1":29, "client2":10, "client1":10, "server2":16, "server3":13}
+3001699344188235473 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+client2 {"server3":13, "server2":13, "server1":31, "client1":10, "client2":11, "coord":29}
+7410932739055688565 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPZtjsD7W6G3WGp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjEfpWNvb3JkHadzZXJ2ZXIzDadzZXJ2ZXIyDQ=="}
+server1 {"server2":13, "client2":10, "client1":10, "server1":32, "coord":29, "server3":17}
+8597769311805223550 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPd1Fpotrnsn6Gp3NlcnZlcjINp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjMRpWNvb3JkHadzZXJ2ZXIxGQ=="}
+client2 {"coord":29, "server3":13, "server2":13, "server1":31, "client1":10, "client2":12}
+7410932739055688565 PutResultRecvd {"OpId":1,"Key":"k0"}
+server2 {"server2":17, "server3":13, "coord":29, "server1":29, "client2":10, "client1":10}
+3001699344188235473 GenerateTokenTrace {"Token":"p3NlcnZlcjLPKagtplzc3tGGp3NlcnZlcjIRp3NlcnZlcjMNpWNvb3JkHadzZXJ2ZXIxHadjbGllbnQyCqdjbGllbnQxCg=="}
+server1 {"server2":13, "client2":10, "client1":10, "server1":33, "coord":29, "server3":17}
+8597769311805223550 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPd1Fpotrnsn6Gp3NlcnZlcjINp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjMRpWNvb3JkHadzZXJ2ZXIxGQ=="}
+client2 {"server3":13, "server2":13, "server1":31, "client1":10, "client2":13, "coord":29}
+5165621020532010217 CreateTrace {}
+server1 {"server3":17, "server2":17, "client2":10, "client1":10, "server1":34, "coord":29}
+3001699344188235473 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPKagtplzc3tGGp3NlcnZlcjIRp3NlcnZlcjMNpWNvb3JkHadzZXJ2ZXIxHadjbGllbnQyCqdjbGllbnQxCg=="}
+client2 {"client2":14, "coord":29, "server3":13, "server2":13, "server1":31, "client1":10}
+5165621020532010217 Get {"ClientId":"2","OpId":2,"Key":"k0"}
+server1 {"server2":17, "client2":10, "client1":10, "server1":35, "coord":29, "server3":17}
+3001699344188235473 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPKagtplzc3tGGp3NlcnZlcjIRp3NlcnZlcjMNpWNvb3JkHadzZXJ2ZXIxHadjbGllbnQyCqdjbGllbnQxCg=="}
+client2 {"client1":10, "client2":15, "coord":29, "server3":13, "server2":13, "server1":31}
+5165621020532010217 GenerateTokenTrace {"Token":"p2NsaWVudDLPR6/48xUZ7OmGp2NsaWVudDEKp2NsaWVudDIPpWNvb3JkHadzZXJ2ZXIzDadzZXJ2ZXIyDadzZXJ2ZXIxHw=="}
+server1 {"client2":10, "client1":10, "server1":36, "coord":29, "server3":17, "server2":17}
+6509181973296783949 PutCommitted {"ClientId":"1","OpId":1,"Key":"k0","Value":"val0"}
+server1 {"server2":17, "client2":10, "client1":10, "server1":37, "coord":29, "server3":17}
+6509181973296783949 GenerateTokenTrace {"Token":"p3NlcnZlcjHPWlVChIC7Ik2Gp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjElpWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEQ=="}
+server1 {"server1":38, "coord":29, "server3":17, "server2":17, "client2":15, "client1":10}
+5165621020532010217 ReceiveTokenTrace {"Token":"p2NsaWVudDLPR6/48xUZ7OmGp2NsaWVudDEKp2NsaWVudDIPpWNvb3JkHadzZXJ2ZXIzDadzZXJ2ZXIyDadzZXJ2ZXIxHw=="}
+client1 {"client1":11, "server3":17, "server2":17, "server1":37, "client2":10, "coord":29}
+6509181973296783949 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPWlVChIC7Ik2Gp2NsaWVudDIKp2NsaWVudDEKp3NlcnZlcjElpWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEQ=="}
+server1 {"client2":15, "client1":10, "server1":39, "coord":29, "server3":17, "server2":17}
+5165621020532010217 GetRecvd {"ClientId":"2","OpId":2,"Key":"k0"}
+client1 {"server3":17, "server2":17, "server1":37, "client2":10, "coord":29, "client1":12}
+6509181973296783949 PutResultRecvd {"OpId":1,"Key":"k0"}
+server1 {"client2":15, "client1":10, "server1":40, "coord":29, "server3":17, "server2":17}
+1835277943854933914 CreateTrace {}
+client1 {"server3":17, "server2":17, "server1":37, "client2":10, "coord":29, "client1":13}
+3381550509779544499 CreateTrace {}
+server1 {"server2":17, "client2":15, "client1":10, "server1":41, "coord":29, "server3":17}
+5487484771011146061 CreateTrace {}
+client1 {"coord":29, "client1":14, "server3":17, "server2":17, "server1":37, "client2":10}
+3381550509779544499 Get {"ClientId":"1","OpId":2,"Key":"k0"}
+client1 {"server2":17, "server1":37, "client2":10, "coord":29, "client1":15, "server3":17}
+3381550509779544499 GenerateTokenTrace {"Token":"p2NsaWVudDHPLu2uRb1zabOGp3NlcnZlcjMRp3NlcnZlcjIRp3NlcnZlcjElp2NsaWVudDIKpWNvb3JkHadjbGllbnQxDw=="}
+server1 {"server3":17, "server2":17, "client2":15, "client1":10, "server1":42, "coord":29}
+5487484771011146061 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":2,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"2","OpId":2}},"Index":3}],"LeaderCommit":2,"Token":""}
+server1 {"server2":17, "client2":15, "client1":10, "server1":43, "coord":29, "server3":17}
+1835277943854933914 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":2,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"2","OpId":2}},"Index":3}],"LeaderCommit":2,"Token":""}
+server1 {"server1":44, "coord":29, "server3":17, "server2":17, "client2":15, "client1":10}
+1835277943854933914 GenerateTokenTrace {"Token":"p3NlcnZlcjHPGXg3kPOVJ5qGp2NsaWVudDEKp3NlcnZlcjEspWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEadjbGllbnQyDw=="}
+server1 {"server2":17, "client2":15, "client1":10, "server1":45, "coord":29, "server3":17}
+5487484771011146061 GenerateTokenTrace {"Token":"p3NlcnZlcjHPTCd2U0Z8MU2Gp3NlcnZlcjEtpWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEadjbGllbnQyD6djbGllbnQxCg=="}
+server2 {"client1":10, "server2":18, "server3":17, "coord":29, "server1":44, "client2":15}
+1835277943854933914 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPGXg3kPOVJ5qGp2NsaWVudDEKp3NlcnZlcjEspWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEadjbGllbnQyDw=="}
+server3 {"server3":18, "coord":29, "server1":45, "server2":17, "client2":15, "client1":10}
+5487484771011146061 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPTCd2U0Z8MU2Gp3NlcnZlcjEtpWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEadjbGllbnQyD6djbGllbnQxCg=="}
+server1 {"server2":17, "client2":15, "client1":15, "server1":46, "coord":29, "server3":17}
+3381550509779544499 ReceiveTokenTrace {"Token":"p2NsaWVudDHPLu2uRb1zabOGp3NlcnZlcjMRp3NlcnZlcjIRp3NlcnZlcjElp2NsaWVudDIKpWNvb3JkHadjbGllbnQxDw=="}
+server1 {"server1":47, "coord":29, "server3":17, "server2":17, "client2":15, "client1":15}
+3381550509779544499 GetRecvd {"ClientId":"1","OpId":2,"Key":"k0"}
+server2 {"client2":15, "client1":10, "server2":19, "server3":17, "coord":29, "server1":44}
+1835277943854933914 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":2,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"2","OpId":2}},"Index":3}],"LeaderCommit":2,"Token":"p3NlcnZlcjHPGXg3kPOVJ5qGp2NsaWVudDEKp3NlcnZlcjEspWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEadjbGllbnQyDw=="}
+server3 {"client2":15, "client1":10, "server3":19, "coord":29, "server1":45, "server2":17}
+5487484771011146061 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":2,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"2","OpId":2}},"Index":3}],"LeaderCommit":2,"Token":"p3NlcnZlcjHPTCd2U0Z8MU2Gp3NlcnZlcjEtpWNvb3JkHadzZXJ2ZXIzEadzZXJ2ZXIyEadjbGllbnQyD6djbGllbnQxCg=="}
+server3 {"client2":15, "client1":10, "server3":20, "coord":29, "server1":45, "server2":17}
+5487484771011146061 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server2 {"coord":29, "server1":44, "client2":15, "client1":10, "server2":20, "server3":17}
+1835277943854933914 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server3 {"client1":10, "server3":21, "coord":29, "server1":45, "server2":17, "client2":15}
+5487484771011146061 GenerateTokenTrace {"Token":"p3NlcnZlcjPPTCd2U0Z8MU2Gp3NlcnZlcjEtp3NlcnZlcjIRp2NsaWVudDIPp2NsaWVudDEKp3NlcnZlcjMVpWNvb3JkHQ=="}
+server2 {"server3":17, "coord":29, "server1":44, "client2":15, "client1":10, "server2":21}
+1835277943854933914 GenerateTokenTrace {"Token":"p3NlcnZlcjLPGXg3kPOVJ5qGp3NlcnZlcjEsp2NsaWVudDIPp2NsaWVudDEKp3NlcnZlcjIVp3NlcnZlcjMRpWNvb3JkHQ=="}
+server1 {"server1":48, "coord":29, "server3":21, "server2":17, "client2":15, "client1":15}
+5487484771011146061 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPTCd2U0Z8MU2Gp3NlcnZlcjEtp3NlcnZlcjIRp2NsaWVudDIPp2NsaWVudDEKp3NlcnZlcjMVpWNvb3JkHQ=="}
+server1 {"coord":29, "server3":21, "server2":17, "client2":15, "client1":15, "server1":49}
+5487484771011146061 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPTCd2U0Z8MU2Gp3NlcnZlcjEtp3NlcnZlcjIRp2NsaWVudDIPp2NsaWVudDEKp3NlcnZlcjMVpWNvb3JkHQ=="}
+server1 {"server2":21, "client2":15, "client1":15, "server1":50, "coord":29, "server3":21}
+1835277943854933914 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPGXg3kPOVJ5qGp3NlcnZlcjEsp2NsaWVudDIPp2NsaWVudDEKp3NlcnZlcjIVp3NlcnZlcjMRpWNvb3JkHQ=="}
+server1 {"coord":29, "server3":21, "server2":21, "client2":15, "client1":15, "server1":51}
+1835277943854933914 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPGXg3kPOVJ5qGp3NlcnZlcjEsp2NsaWVudDIPp2NsaWVudDEKp3NlcnZlcjIVp3NlcnZlcjMRpWNvb3JkHQ=="}
+server1 {"server3":21, "server2":21, "client2":15, "client1":15, "server1":52, "coord":29}
+617794041739517374 CreateTrace {}
+server1 {"server1":53, "coord":29, "server3":21, "server2":21, "client2":15, "client1":15}
+5165621020532010217 GetCommitted {"ClientId":"2","OpId":2,"Key":"k0","Value":"val0"}
+server1 {"server1":54, "coord":29, "server3":21, "server2":21, "client2":15, "client1":15}
+5165621020532010217 GenerateTokenTrace {"Token":"p3NlcnZlcjHPR6/48xUZ7OmGp3NlcnZlcjE2pWNvb3JkHadzZXJ2ZXIzFadzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxDw=="}
+server1 {"server2":21, "client2":15, "client1":15, "server1":55, "coord":29, "server3":21}
+8416908554191981916 CreateTrace {}
+client2 {"server3":21, "server2":21, "server1":54, "client1":15, "client2":16, "coord":29}
+5165621020532010217 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPR6/48xUZ7OmGp3NlcnZlcjE2pWNvb3JkHadzZXJ2ZXIzFadzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxDw=="}
+server1 {"server3":21, "server2":21, "client2":15, "client1":15, "server1":56, "coord":29}
+8416908554191981916 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":3,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"1","OpId":2}},"Index":4}],"LeaderCommit":3,"Token":""}
+client2 {"client1":15, "client2":17, "coord":29, "server3":21, "server2":21, "server1":54}
+5165621020532010217 GetResultRecvd {"OpId":2,"Key":"k0","Value":"val0"}
+server1 {"client1":15, "server1":57, "coord":29, "server3":21, "server2":21, "client2":15}
+617794041739517374 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":3,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"1","OpId":2}},"Index":4}],"LeaderCommit":3,"Token":""}
+client2 {"server3":21, "server2":21, "server1":54, "client1":15, "client2":18, "coord":29}
+1327648500659212207 CreateTrace {}
+server1 {"server2":21, "client2":15, "client1":15, "server1":58, "coord":29, "server3":21}
+617794041739517374 GenerateTokenTrace {"Token":"p3NlcnZlcjHPCJLYaGI8nb6Gp3NlcnZlcjMVp3NlcnZlcjIVp2NsaWVudDIPp2NsaWVudDEPp3NlcnZlcjE6pWNvb3JkHQ=="}
+client2 {"coord":29, "server3":21, "server2":21, "server1":54, "client1":15, "client2":19}
+1327648500659212207 Put {"ClientId":"2","OpId":3,"Key":"k1","Value":"val1"}
+server1 {"coord":29, "server3":21, "server2":21, "client2":15, "client1":15, "server1":59}
+8416908554191981916 GenerateTokenTrace {"Token":"p3NlcnZlcjHPdM7dvD+PTVyGpWNvb3JkHadzZXJ2ZXIzFadzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxD6dzZXJ2ZXIxOw=="}
+server2 {"coord":29, "server1":58, "client2":15, "client1":15, "server2":22, "server3":21}
+617794041739517374 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPCJLYaGI8nb6Gp3NlcnZlcjMVp3NlcnZlcjIVp2NsaWVudDIPp2NsaWVudDEPp3NlcnZlcjE6pWNvb3JkHQ=="}
+client2 {"server3":21, "server2":21, "server1":54, "client1":15, "client2":20, "coord":29}
+1327648500659212207 GenerateTokenTrace {"Token":"p2NsaWVudDLPEmzBRvRfT6+GpWNvb3JkHadzZXJ2ZXIzFadzZXJ2ZXIyFadzZXJ2ZXIxNqdjbGllbnQxD6djbGllbnQyFA=="}
+server2 {"server1":58, "client2":15, "client1":15, "server2":23, "server3":21, "coord":29}
+617794041739517374 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":3,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"1","OpId":2}},"Index":4}],"LeaderCommit":3,"Token":"p3NlcnZlcjHPCJLYaGI8nb6Gp3NlcnZlcjMVp3NlcnZlcjIVp2NsaWVudDIPp2NsaWVudDEPp3NlcnZlcjE6pWNvb3JkHQ=="}
+server3 {"client1":15, "server3":22, "coord":29, "server1":59, "server2":21, "client2":15}
+8416908554191981916 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPdM7dvD+PTVyGpWNvb3JkHadzZXJ2ZXIzFadzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxD6dzZXJ2ZXIxOw=="}
+server3 {"coord":29, "server1":59, "server2":21, "client2":15, "client1":15, "server3":23}
+8416908554191981916 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":3,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k0","Val":"","ClientInfo":{"ClientId":"1","OpId":2}},"Index":4}],"LeaderCommit":3,"Token":"p3NlcnZlcjHPdM7dvD+PTVyGpWNvb3JkHadzZXJ2ZXIzFadzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxD6dzZXJ2ZXIxOw=="}
+server2 {"server1":58, "client2":15, "client1":15, "server2":24, "server3":21, "coord":29}
+617794041739517374 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server1 {"server1":60, "coord":29, "server3":21, "server2":21, "client2":20, "client1":15}
+1327648500659212207 ReceiveTokenTrace {"Token":"p2NsaWVudDLPEmzBRvRfT6+GpWNvb3JkHadzZXJ2ZXIzFadzZXJ2ZXIyFadzZXJ2ZXIxNqdjbGllbnQxD6djbGllbnQyFA=="}
+server2 {"coord":29, "server1":58, "client2":15, "client1":15, "server2":25, "server3":21}
+617794041739517374 GenerateTokenTrace {"Token":"p3NlcnZlcjLPCJLYaGI8nb6Gp3NlcnZlcjIZp3NlcnZlcjMVpWNvb3JkHadzZXJ2ZXIxOqdjbGllbnQyD6djbGllbnQxDw=="}
+server3 {"server3":24, "coord":29, "server1":59, "server2":21, "client2":15, "client1":15}
+8416908554191981916 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server1 {"client1":15, "server1":61, "coord":29, "server3":21, "server2":21, "client2":20}
+1327648500659212207 PutRecvd {"ClientId":"2","OpId":3,"Key":"k1","Value":"val1"}
+server3 {"server3":25, "coord":29, "server1":59, "server2":21, "client2":15, "client1":15}
+8416908554191981916 GenerateTokenTrace {"Token":"p3NlcnZlcjPPdM7dvD+PTVyGpWNvb3JkHadzZXJ2ZXIxO6dzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxD6dzZXJ2ZXIzGQ=="}
+server1 {"client1":15, "server1":62, "coord":29, "server3":21, "server2":25, "client2":20}
+617794041739517374 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPCJLYaGI8nb6Gp3NlcnZlcjIZp3NlcnZlcjMVpWNvb3JkHadzZXJ2ZXIxOqdjbGllbnQyD6djbGllbnQxDw=="}
+server1 {"server2":25, "client2":20, "client1":15, "server1":63, "coord":29, "server3":21}
+617794041739517374 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPCJLYaGI8nb6Gp3NlcnZlcjIZp3NlcnZlcjMVpWNvb3JkHadzZXJ2ZXIxOqdjbGllbnQyD6djbGllbnQxDw=="}
+server1 {"client2":20, "client1":15, "server1":64, "coord":29, "server3":25, "server2":25}
+8416908554191981916 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPdM7dvD+PTVyGpWNvb3JkHadzZXJ2ZXIxO6dzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxD6dzZXJ2ZXIzGQ=="}
+server1 {"server2":25, "client2":20, "client1":15, "server1":65, "coord":29, "server3":25}
+8416908554191981916 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPdM7dvD+PTVyGpWNvb3JkHadzZXJ2ZXIxO6dzZXJ2ZXIyFadjbGllbnQyD6djbGllbnQxD6dzZXJ2ZXIzGQ=="}
+server1 {"coord":29, "server3":25, "server2":25, "client2":20, "client1":15, "server1":66}
+2241625715059255485 CreateTrace {}
+server1 {"client1":15, "server1":67, "coord":29, "server3":25, "server2":25, "client2":20}
+2940911647747971298 CreateTrace {}
+server1 {"server1":68, "coord":29, "server3":25, "server2":25, "client2":20, "client1":15}
+2940911647747971298 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":4,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"2","OpId":3}},"Index":5}],"LeaderCommit":4,"Token":""}
+server1 {"server2":25, "client2":20, "client1":15, "server1":69, "coord":29, "server3":25}
+2940911647747971298 GenerateTokenTrace {"Token":"p3NlcnZlcjHPKNA3j9/TmOKGp2NsaWVudDIUp2NsaWVudDEPp3NlcnZlcjFFpWNvb3JkHadzZXJ2ZXIzGadzZXJ2ZXIyGQ=="}
+server1 {"server1":70, "coord":29, "server3":25, "server2":25, "client2":20, "client1":15}
+2241625715059255485 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":4,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"2","OpId":3}},"Index":5}],"LeaderCommit":4,"Token":""}
+server1 {"client1":15, "server1":71, "coord":29, "server3":25, "server2":25, "client2":20}
+3381550509779544499 GetCommitted {"ClientId":"1","OpId":2,"Key":"k0","Value":"val0"}
+server3 {"server3":26, "coord":29, "server1":69, "server2":25, "client2":20, "client1":15}
+2940911647747971298 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPKNA3j9/TmOKGp2NsaWVudDIUp2NsaWVudDEPp3NlcnZlcjFFpWNvb3JkHadzZXJ2ZXIzGadzZXJ2ZXIyGQ=="}
+server3 {"client1":15, "server3":27, "coord":29, "server1":69, "server2":25, "client2":20}
+2940911647747971298 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":4,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"2","OpId":3}},"Index":5}],"LeaderCommit":4,"Token":"p3NlcnZlcjHPKNA3j9/TmOKGp2NsaWVudDIUp2NsaWVudDEPp3NlcnZlcjFFpWNvb3JkHadzZXJ2ZXIzGadzZXJ2ZXIyGQ=="}
+server1 {"server1":72, "coord":29, "server3":25, "server2":25, "client2":20, "client1":15}
+3381550509779544499 GenerateTokenTrace {"Token":"p3NlcnZlcjHPLu2uRb1zabOGp3NlcnZlcjMZp3NlcnZlcjIZp2NsaWVudDIUp2NsaWVudDEPp3NlcnZlcjFIpWNvb3JkHQ=="}
+server1 {"coord":29, "server3":25, "server2":25, "client2":20, "client1":15, "server1":73}
+2241625715059255485 GenerateTokenTrace {"Token":"p3NlcnZlcjHPHxvathF86L2Gp3NlcnZlcjFJpWNvb3JkHadzZXJ2ZXIzGadzZXJ2ZXIyGadjbGllbnQyFKdjbGllbnQxDw=="}
+client1 {"coord":29, "client1":16, "server3":25, "server2":25, "server1":72, "client2":20}
+3381550509779544499 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPLu2uRb1zabOGp3NlcnZlcjMZp3NlcnZlcjIZp2NsaWVudDIUp2NsaWVudDEPp3NlcnZlcjFIpWNvb3JkHQ=="}
+server3 {"server3":28, "coord":29, "server1":69, "server2":25, "client2":20, "client1":15}
+2940911647747971298 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server2 {"server2":26, "server3":25, "coord":29, "server1":73, "client2":20, "client1":15}
+2241625715059255485 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPHxvathF86L2Gp3NlcnZlcjFJpWNvb3JkHadzZXJ2ZXIzGadzZXJ2ZXIyGadjbGllbnQyFKdjbGllbnQxDw=="}
+server3 {"server3":29, "coord":29, "server1":69, "server2":25, "client2":20, "client1":15}
+2940911647747971298 GenerateTokenTrace {"Token":"p3NlcnZlcjPPKNA3j9/TmOKGp3NlcnZlcjMdpWNvb3JkHadzZXJ2ZXIxRadzZXJ2ZXIyGadjbGllbnQyFKdjbGllbnQxDw=="}
+client1 {"server2":25, "server1":72, "client2":20, "coord":29, "client1":17, "server3":25}
+3381550509779544499 GetResultRecvd {"OpId":2,"Key":"k0","Value":"val0"}
+server2 {"client2":20, "client1":15, "server2":27, "server3":25, "coord":29, "server1":73}
+2241625715059255485 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":4,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"2","OpId":3}},"Index":5}],"LeaderCommit":4,"Token":"p3NlcnZlcjHPHxvathF86L2Gp3NlcnZlcjFJpWNvb3JkHadzZXJ2ZXIzGadzZXJ2ZXIyGadjbGllbnQyFKdjbGllbnQxDw=="}
+client1 {"coord":29, "client1":18, "server3":25, "server2":25, "server1":72, "client2":20}
+5551808388509314195 CreateTrace {}
+server1 {"client2":20, "client1":15, "server1":74, "coord":29, "server3":29, "server2":25}
+2940911647747971298 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPKNA3j9/TmOKGp3NlcnZlcjMdpWNvb3JkHadzZXJ2ZXIxRadzZXJ2ZXIyGadjbGllbnQyFKdjbGllbnQxDw=="}
+client1 {"server3":25, "server2":25, "server1":72, "client2":20, "coord":29, "client1":19}
+5551808388509314195 Put {"ClientId":"1","OpId":3,"Key":"k1","Value":"val1"}
+server2 {"client1":15, "server2":28, "server3":25, "coord":29, "server1":73, "client2":20}
+2241625715059255485 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server1 {"client1":15, "server1":75, "coord":29, "server3":29, "server2":25, "client2":20}
+2940911647747971298 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPKNA3j9/TmOKGp3NlcnZlcjMdpWNvb3JkHadzZXJ2ZXIxRadzZXJ2ZXIyGadjbGllbnQyFKdjbGllbnQxDw=="}
+server2 {"client1":15, "server2":29, "server3":25, "coord":29, "server1":73, "client2":20}
+2241625715059255485 GenerateTokenTrace {"Token":"p3NlcnZlcjLPHxvathF86L2GpWNvb3JkHadzZXJ2ZXIxSadjbGllbnQyFKdjbGllbnQxD6dzZXJ2ZXIyHadzZXJ2ZXIzGQ=="}
+server1 {"server1":76, "coord":29, "server3":29, "server2":25, "client2":20, "client1":15}
+1327648500659212207 PutCommitted {"ClientId":"2","OpId":3,"Key":"k1","Value":"val1"}
+client1 {"coord":29, "client1":20, "server3":25, "server2":25, "server1":72, "client2":20}
+5551808388509314195 GenerateTokenTrace {"Token":"p2NsaWVudDHPTQv8UIohrJOGp2NsaWVudDEUp3NlcnZlcjMZp3NlcnZlcjIZp3NlcnZlcjFIp2NsaWVudDIUpWNvb3JkHQ=="}
+server1 {"client2":20, "client1":15, "server1":77, "coord":29, "server3":29, "server2":25}
+1327648500659212207 GenerateTokenTrace {"Token":"p3NlcnZlcjHPEmzBRvRfT6+Gp2NsaWVudDEPp3NlcnZlcjFNpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyGadjbGllbnQyFA=="}
+server1 {"client2":20, "client1":20, "server1":78, "coord":29, "server3":29, "server2":25}
+5551808388509314195 ReceiveTokenTrace {"Token":"p2NsaWVudDHPTQv8UIohrJOGp2NsaWVudDEUp3NlcnZlcjMZp3NlcnZlcjIZp3NlcnZlcjFIp2NsaWVudDIUpWNvb3JkHQ=="}
+client2 {"client2":21, "coord":29, "server3":29, "server2":25, "server1":77, "client1":15}
+1327648500659212207 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPEmzBRvRfT6+Gp2NsaWVudDEPp3NlcnZlcjFNpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyGadjbGllbnQyFA=="}
+server1 {"server2":25, "client2":20, "client1":20, "server1":79, "coord":29, "server3":29}
+5551808388509314195 PutRecvd {"ClientId":"1","OpId":3,"Key":"k1","Value":"val1"}
+client2 {"server1":77, "client1":15, "client2":22, "coord":29, "server3":29, "server2":25}
+1327648500659212207 PutResultRecvd {"OpId":3,"Key":"k1"}
+server1 {"client2":20, "client1":20, "server1":80, "coord":29, "server3":29, "server2":29}
+2241625715059255485 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPHxvathF86L2GpWNvb3JkHadzZXJ2ZXIxSadjbGllbnQyFKdjbGllbnQxD6dzZXJ2ZXIyHadzZXJ2ZXIzGQ=="}
+client2 {"server2":25, "server1":77, "client1":15, "client2":23, "coord":29, "server3":29}
+3224726499009299097 CreateTrace {}
+server1 {"server1":81, "coord":29, "server3":29, "server2":29, "client2":20, "client1":20}
+2241625715059255485 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPHxvathF86L2GpWNvb3JkHadzZXJ2ZXIxSadjbGllbnQyFKdjbGllbnQxD6dzZXJ2ZXIyHadzZXJ2ZXIzGQ=="}
+client2 {"client2":24, "coord":29, "server3":29, "server2":25, "server1":77, "client1":15}
+3224726499009299097 Get {"ClientId":"2","OpId":4,"Key":"k1"}
+server1 {"server1":82, "coord":29, "server3":29, "server2":29, "client2":20, "client1":20}
+37417480412755301 CreateTrace {}
+client2 {"coord":29, "server3":29, "server2":25, "server1":77, "client1":15, "client2":25}
+3224726499009299097 GenerateTokenTrace {"Token":"p2NsaWVudDLPLMCHql89ApmGp3NlcnZlcjMdp3NlcnZlcjIZp3NlcnZlcjFNp2NsaWVudDEPp2NsaWVudDIZpWNvb3JkHQ=="}
+server1 {"server2":29, "client2":20, "client1":20, "server1":83, "coord":29, "server3":29}
+1648735438412044302 CreateTrace {}
+server1 {"server3":29, "server2":29, "client2":20, "client1":20, "server1":84, "coord":29}
+1648735438412044302 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":5,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"1","OpId":3}},"Index":6}],"LeaderCommit":5,"Token":""}
+server1 {"client1":20, "server1":85, "coord":29, "server3":29, "server2":29, "client2":20}
+1648735438412044302 GenerateTokenTrace {"Token":"p3NlcnZlcjHPFuF8JVcl2A6Gp2NsaWVudDEUp3NlcnZlcjFVpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyHadjbGllbnQyFA=="}
+server1 {"coord":29, "server3":29, "server2":29, "client2":20, "client1":20, "server1":86}
+37417480412755301 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":5,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"1","OpId":3}},"Index":6}],"LeaderCommit":5,"Token":""}
+server1 {"server2":29, "client2":25, "client1":20, "server1":87, "coord":29, "server3":29}
+3224726499009299097 ReceiveTokenTrace {"Token":"p2NsaWVudDLPLMCHql89ApmGp3NlcnZlcjMdp3NlcnZlcjIZp3NlcnZlcjFNp2NsaWVudDEPp2NsaWVudDIZpWNvb3JkHQ=="}
+server3 {"client2":20, "client1":20, "server3":30, "coord":29, "server1":85, "server2":29}
+1648735438412044302 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPFuF8JVcl2A6Gp2NsaWVudDEUp3NlcnZlcjFVpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyHadjbGllbnQyFA=="}
+server1 {"client2":25, "client1":20, "server1":88, "coord":29, "server3":29, "server2":29}
+3224726499009299097 GetRecvd {"ClientId":"2","OpId":4,"Key":"k1"}
+server1 {"client1":20, "server1":89, "coord":29, "server3":29, "server2":29, "client2":25}
+37417480412755301 GenerateTokenTrace {"Token":"p3NlcnZlcjHPAITvAAxkdWWGp2NsaWVudDEUp3NlcnZlcjFZpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyHadjbGllbnQyGQ=="}
+server3 {"server1":85, "server2":29, "client2":20, "client1":20, "server3":31, "coord":29}
+1648735438412044302 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":5,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"1","OpId":3}},"Index":6}],"LeaderCommit":5,"Token":"p3NlcnZlcjHPFuF8JVcl2A6Gp2NsaWVudDEUp3NlcnZlcjFVpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyHadjbGllbnQyFA=="}
+server2 {"server2":30, "server3":29, "coord":29, "server1":89, "client2":25, "client1":20}
+37417480412755301 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPAITvAAxkdWWGp2NsaWVudDEUp3NlcnZlcjFZpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyHadjbGllbnQyGQ=="}
+server3 {"client1":20, "server3":32, "coord":29, "server1":85, "server2":29, "client2":20}
+1648735438412044302 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server2 {"server2":31, "server3":29, "coord":29, "server1":89, "client2":25, "client1":20}
+37417480412755301 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":5,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":1,"Key":"k1","Val":"val1","ClientInfo":{"ClientId":"1","OpId":3}},"Index":6}],"LeaderCommit":5,"Token":"p3NlcnZlcjHPAITvAAxkdWWGp2NsaWVudDEUp3NlcnZlcjFZpWNvb3JkHadzZXJ2ZXIzHadzZXJ2ZXIyHadjbGllbnQyGQ=="}
+server3 {"client2":20, "client1":20, "server3":33, "coord":29, "server1":85, "server2":29}
+1648735438412044302 GenerateTokenTrace {"Token":"p3NlcnZlcjPPFuF8JVcl2A6Gp3NlcnZlcjFVp3NlcnZlcjIdp2NsaWVudDIUp2NsaWVudDEUp3NlcnZlcjMhpWNvb3JkHQ=="}
+server2 {"server2":32, "server3":29, "coord":29, "server1":89, "client2":25, "client1":20}
+37417480412755301 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server1 {"client2":25, "client1":20, "server1":90, "coord":29, "server3":33, "server2":29}
+1648735438412044302 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPFuF8JVcl2A6Gp3NlcnZlcjFVp3NlcnZlcjIdp2NsaWVudDIUp2NsaWVudDEUp3NlcnZlcjMhpWNvb3JkHQ=="}
+server2 {"client1":20, "server2":33, "server3":29, "coord":29, "server1":89, "client2":25}
+37417480412755301 GenerateTokenTrace {"Token":"p3NlcnZlcjLPAITvAAxkdWWGp3NlcnZlcjIhp3NlcnZlcjMdpWNvb3JkHadzZXJ2ZXIxWadjbGllbnQyGadjbGllbnQxFA=="}
+server1 {"server2":29, "client2":25, "client1":20, "server1":91, "coord":29, "server3":33}
+1648735438412044302 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPFuF8JVcl2A6Gp3NlcnZlcjFVp3NlcnZlcjIdp2NsaWVudDIUp2NsaWVudDEUp3NlcnZlcjMhpWNvb3JkHQ=="}
+server1 {"server2":33, "client2":25, "client1":20, "server1":92, "coord":29, "server3":33}
+37417480412755301 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPAITvAAxkdWWGp3NlcnZlcjIhp3NlcnZlcjMdpWNvb3JkHadzZXJ2ZXIxWadjbGllbnQyGadjbGllbnQxFA=="}
+server1 {"server3":33, "server2":33, "client2":25, "client1":20, "server1":93, "coord":29}
+37417480412755301 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPAITvAAxkdWWGp3NlcnZlcjIhp3NlcnZlcjMdpWNvb3JkHadzZXJ2ZXIxWadjbGllbnQyGadjbGllbnQxFA=="}
+server1 {"server1":94, "coord":29, "server3":33, "server2":33, "client2":25, "client1":20}
+4734104739135269022 CreateTrace {}
+server1 {"client2":25, "client1":20, "server1":95, "coord":29, "server3":33, "server2":33}
+2842413002701925320 CreateTrace {}
+server1 {"client2":25, "client1":20, "server1":96, "coord":29, "server3":33, "server2":33}
+2842413002701925320 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":6,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"2","OpId":4}},"Index":7}],"LeaderCommit":6,"Token":""}
+server1 {"server3":33, "server2":33, "client2":25, "client1":20, "server1":97, "coord":29}
+2842413002701925320 GenerateTokenTrace {"Token":"p3NlcnZlcjHPJ3JHkPL/68iGp3NlcnZlcjMhp3NlcnZlcjIhp2NsaWVudDIZp2NsaWVudDEUp3NlcnZlcjFhpWNvb3JkHQ=="}
+server1 {"client2":25, "client1":20, "server1":98, "coord":29, "server3":33, "server2":33}
+4734104739135269022 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":6,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"2","OpId":4}},"Index":7}],"LeaderCommit":6,"Token":""}
+server3 {"client2":25, "client1":20, "server3":34, "coord":29, "server1":97, "server2":33}
+2842413002701925320 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPJ3JHkPL/68iGp3NlcnZlcjMhp3NlcnZlcjIhp2NsaWVudDIZp2NsaWVudDEUp3NlcnZlcjFhpWNvb3JkHQ=="}
+server1 {"coord":29, "server3":33, "server2":33, "client2":25, "client1":20, "server1":99}
+5551808388509314195 PutCommitted {"ClientId":"1","OpId":3,"Key":"k1","Value":"val1"}
+server3 {"client2":25, "client1":20, "server3":35, "coord":29, "server1":97, "server2":33}
+2842413002701925320 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":6,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"2","OpId":4}},"Index":7}],"LeaderCommit":6,"Token":"p3NlcnZlcjHPJ3JHkPL/68iGp3NlcnZlcjMhp3NlcnZlcjIhp2NsaWVudDIZp2NsaWVudDEUp3NlcnZlcjFhpWNvb3JkHQ=="}
+server1 {"coord":29, "server3":33, "server2":33, "client2":25, "client1":20, "server1":100}
+5551808388509314195 GenerateTokenTrace {"Token":"p3NlcnZlcjHPTQv8UIohrJOGp3NlcnZlcjFkpWNvb3JkHadzZXJ2ZXIzIadzZXJ2ZXIyIadjbGllbnQyGadjbGllbnQxFA=="}
+server3 {"server1":97, "server2":33, "client2":25, "client1":20, "server3":36, "coord":29}
+2842413002701925320 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server1 {"server3":33, "server2":33, "client2":25, "client1":20, "server1":101, "coord":29}
+4734104739135269022 GenerateTokenTrace {"Token":"p3NlcnZlcjHPQbLrLYmmqJ6Gp3NlcnZlcjIhp2NsaWVudDIZp2NsaWVudDEUp3NlcnZlcjFlpWNvb3JkHadzZXJ2ZXIzIQ=="}
+server3 {"server3":37, "coord":29, "server1":97, "server2":33, "client2":25, "client1":20}
+2842413002701925320 GenerateTokenTrace {"Token":"p3NlcnZlcjPPJ3JHkPL/68iGp2NsaWVudDEUp3NlcnZlcjMlpWNvb3JkHadzZXJ2ZXIxYadzZXJ2ZXIyIadjbGllbnQyGQ=="}
+client1 {"server2":33, "server1":100, "client2":25, "coord":29, "client1":21, "server3":33}
+5551808388509314195 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPTQv8UIohrJOGp3NlcnZlcjFkpWNvb3JkHadzZXJ2ZXIzIadzZXJ2ZXIyIadjbGllbnQyGadjbGllbnQxFA=="}
+server2 {"coord":29, "server1":101, "client2":25, "client1":20, "server2":34, "server3":33}
+4734104739135269022 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPQbLrLYmmqJ6Gp3NlcnZlcjIhp2NsaWVudDIZp2NsaWVudDEUp3NlcnZlcjFlpWNvb3JkHadzZXJ2ZXIzIQ=="}
+server1 {"server2":33, "client2":25, "client1":20, "server1":102, "coord":29, "server3":37}
+2842413002701925320 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPJ3JHkPL/68iGp2NsaWVudDEUp3NlcnZlcjMlpWNvb3JkHadzZXJ2ZXIxYadzZXJ2ZXIyIadjbGllbnQyGQ=="}
+client1 {"client2":25, "coord":29, "client1":22, "server3":33, "server2":33, "server1":100}
+5551808388509314195 PutResultRecvd {"OpId":3,"Key":"k1"}
+server2 {"client2":25, "client1":20, "server2":35, "server3":33, "coord":29, "server1":101}
+4734104739135269022 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":6,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"2","OpId":4}},"Index":7}],"LeaderCommit":6,"Token":"p3NlcnZlcjHPQbLrLYmmqJ6Gp3NlcnZlcjIhp2NsaWVudDIZp2NsaWVudDEUp3NlcnZlcjFlpWNvb3JkHadzZXJ2ZXIzIQ=="}
+client1 {"server3":33, "server2":33, "server1":100, "client2":25, "coord":29, "client1":23}
+1418385060779153711 CreateTrace {}
+server1 {"server3":37, "server2":33, "client2":25, "client1":20, "server1":103, "coord":29}
+2842413002701925320 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPJ3JHkPL/68iGp2NsaWVudDEUp3NlcnZlcjMlpWNvb3JkHadzZXJ2ZXIxYadzZXJ2ZXIyIadjbGllbnQyGQ=="}
+server2 {"client2":25, "client1":20, "server2":36, "server3":33, "coord":29, "server1":101}
+4734104739135269022 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+client1 {"server2":33, "server1":100, "client2":25, "coord":29, "client1":24, "server3":33}
+1418385060779153711 Get {"ClientId":"1","OpId":4,"Key":"k1"}
+server2 {"server3":33, "coord":29, "server1":101, "client2":25, "client1":20, "server2":37}
+4734104739135269022 GenerateTokenTrace {"Token":"p3NlcnZlcjLPQbLrLYmmqJ6GpWNvb3JkHadzZXJ2ZXIxZadjbGllbnQyGadjbGllbnQxFKdzZXJ2ZXIyJadzZXJ2ZXIzIQ=="}
+server1 {"server1":104, "coord":29, "server3":37, "server2":33, "client2":25, "client1":20}
+3224726499009299097 GetCommitted {"ClientId":"2","OpId":4,"Key":"k1","Value":"val1"}
+client1 {"coord":29, "client1":25, "server3":33, "server2":33, "server1":100, "client2":25}
+1418385060779153711 GenerateTokenTrace {"Token":"p2NsaWVudDHPE68dsqZ2WS+Gp2NsaWVudDEZp3NlcnZlcjMhp3NlcnZlcjIhp3NlcnZlcjFkp2NsaWVudDIZpWNvb3JkHQ=="}
+server1 {"server3":37, "server2":33, "client2":25, "client1":20, "server1":105, "coord":29}
+3224726499009299097 GenerateTokenTrace {"Token":"p3NlcnZlcjHPLMCHql89ApmGp3NlcnZlcjFppWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyIadjbGllbnQyGadjbGllbnQxFA=="}
+server1 {"server1":106, "coord":29, "server3":37, "server2":37, "client2":25, "client1":20}
+4734104739135269022 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPQbLrLYmmqJ6GpWNvb3JkHadzZXJ2ZXIxZadjbGllbnQyGadjbGllbnQxFKdzZXJ2ZXIyJadzZXJ2ZXIzIQ=="}
+client2 {"client2":26, "coord":29, "server3":37, "server2":33, "server1":105, "client1":20}
+3224726499009299097 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPLMCHql89ApmGp3NlcnZlcjFppWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyIadjbGllbnQyGadjbGllbnQxFA=="}
+client2 {"coord":29, "server3":37, "server2":33, "server1":105, "client1":20, "client2":27}
+3224726499009299097 GetResultRecvd {"OpId":4,"Key":"k1","Value":"val1"}
+server1 {"server1":107, "coord":29, "server3":37, "server2":37, "client2":25, "client1":20}
+4734104739135269022 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPQbLrLYmmqJ6GpWNvb3JkHadzZXJ2ZXIxZadjbGllbnQyGadjbGllbnQxFKdzZXJ2ZXIyJadzZXJ2ZXIzIQ=="}
+client2 {"server2":33, "server1":105, "client1":20, "client2":28, "coord":29, "server3":37}
+7401998442767600878 GenerateTokenTrace {"Token":"p2NsaWVudDLPZrkuXcEoTO6Gp3NlcnZlcjMlp3NlcnZlcjIhp3NlcnZlcjFpp2NsaWVudDEUp2NsaWVudDIcpWNvb3JkHQ=="}
+server1 {"client1":25, "server1":108, "coord":29, "server3":37, "server2":37, "client2":25}
+1418385060779153711 ReceiveTokenTrace {"Token":"p2NsaWVudDHPE68dsqZ2WS+Gp2NsaWVudDEZp3NlcnZlcjMhp3NlcnZlcjIhp3NlcnZlcjFkp2NsaWVudDIZpWNvb3JkHQ=="}
+client2 {"coord":29, "server3":37, "server2":33, "server1":105, "client1":20, "client2":29}
+7401998442767600878 KvslibStop {"ClientId":"2"}
+server1 {"server2":37, "client2":25, "client1":25, "server1":109, "coord":29, "server3":37}
+1418385060779153711 GetRecvd {"ClientId":"1","OpId":4,"Key":"k1"}
+server1 {"server3":37, "server2":37, "client2":25, "client1":25, "server1":110, "coord":29}
+5297543039183385252 CreateTrace {}
+server1 {"server1":111, "coord":29, "server3":37, "server2":37, "client2":25, "client1":25}
+6921817819049658730 CreateTrace {}
+server1 {"server2":37, "client2":25, "client1":25, "server1":112, "coord":29, "server3":37}
+6921817819049658730 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":7,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"1","OpId":4}},"Index":8}],"LeaderCommit":7,"Token":""}
+server1 {"client2":25, "client1":25, "server1":113, "coord":29, "server3":37, "server2":37}
+5297543039183385252 AppendEntriesRequestSent {"Term":1,"LeaderId":1,"PrevLogIndex":7,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"1","OpId":4}},"Index":8}],"LeaderCommit":7,"Token":""}
+server1 {"client1":25, "server1":114, "coord":29, "server3":37, "server2":37, "client2":25}
+5297543039183385252 GenerateTokenTrace {"Token":"p3NlcnZlcjHPSYSnU5jecqSGp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjFypWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyJQ=="}
+server1 {"server2":37, "client2":25, "client1":25, "server1":115, "coord":29, "server3":37}
+6921817819049658730 GenerateTokenTrace {"Token":"p3NlcnZlcjHPYA88ohBsiWqGpWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyJadjbGllbnQyGadjbGllbnQxGadzZXJ2ZXIxcw=="}
+server2 {"coord":29, "server1":114, "client2":25, "client1":25, "server2":38, "server3":37}
+5297543039183385252 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPSYSnU5jecqSGp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjFypWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyJQ=="}
+server2 {"server2":39, "server3":37, "coord":29, "server1":114, "client2":25, "client1":25}
+5297543039183385252 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":7,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"1","OpId":4}},"Index":8}],"LeaderCommit":7,"Token":"p3NlcnZlcjHPSYSnU5jecqSGp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjFypWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyJQ=="}
+server3 {"coord":29, "server1":115, "server2":37, "client2":25, "client1":25, "server3":38}
+6921817819049658730 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPYA88ohBsiWqGpWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyJadjbGllbnQyGadjbGllbnQxGadzZXJ2ZXIxcw=="}
+server2 {"server3":37, "coord":29, "server1":114, "client2":25, "client1":25, "server2":40}
+5297543039183385252 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server3 {"server2":37, "client2":25, "client1":25, "server3":39, "coord":29, "server1":115}
+6921817819049658730 AppendEntriesRequestRecvd {"Term":1,"LeaderId":1,"PrevLogIndex":7,"PrevLogTerm":1,"Entries":[{"Term":1,"Command":{"Kind":2,"Key":"k1","Val":"","ClientInfo":{"ClientId":"1","OpId":4}},"Index":8}],"LeaderCommit":7,"Token":"p3NlcnZlcjHPYA88ohBsiWqGpWNvb3JkHadzZXJ2ZXIzJadzZXJ2ZXIyJadjbGllbnQyGadjbGllbnQxGadzZXJ2ZXIxcw=="}
+server2 {"client2":25, "client1":25, "server2":41, "server3":37, "coord":29, "server1":114}
+5297543039183385252 GenerateTokenTrace {"Token":"p3NlcnZlcjLPSYSnU5jecqSGp3NlcnZlcjFyp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjIpp3NlcnZlcjMlpWNvb3JkHQ=="}
+server3 {"server1":115, "server2":37, "client2":25, "client1":25, "server3":40, "coord":29}
+6921817819049658730 AppendEntriesResponseSent {"Term":1,"Success":true,"Token":null}
+server3 {"client1":25, "server3":41, "coord":29, "server1":115, "server2":37, "client2":25}
+6921817819049658730 GenerateTokenTrace {"Token":"p3NlcnZlcjPPYA88ohBsiWqGp3NlcnZlcjIlp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjMppWNvb3JkHadzZXJ2ZXIxcw=="}
+server1 {"server3":37, "server2":41, "client2":25, "client1":25, "server1":116, "coord":29}
+5297543039183385252 ReceiveTokenTrace {"Token":"p3NlcnZlcjLPSYSnU5jecqSGp3NlcnZlcjFyp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjIpp3NlcnZlcjMlpWNvb3JkHQ=="}
+server1 {"coord":29, "server3":37, "server2":41, "client2":25, "client1":25, "server1":117}
+5297543039183385252 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjLPSYSnU5jecqSGp3NlcnZlcjFyp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjIpp3NlcnZlcjMlpWNvb3JkHQ=="}
+server1 {"coord":29, "server3":41, "server2":41, "client2":25, "client1":25, "server1":118}
+6921817819049658730 ReceiveTokenTrace {"Token":"p3NlcnZlcjPPYA88ohBsiWqGp3NlcnZlcjIlp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjMppWNvb3JkHadzZXJ2ZXIxcw=="}
+server1 {"coord":29, "server3":41, "server2":41, "client2":25, "client1":25, "server1":119}
+6921817819049658730 AppendEntriesResponseRecvd {"Term":1,"Success":true,"Token":"p3NlcnZlcjPPYA88ohBsiWqGp3NlcnZlcjIlp2NsaWVudDIZp2NsaWVudDEZp3NlcnZlcjMppWNvb3JkHadzZXJ2ZXIxcw=="}
+server1 {"client2":25, "client1":25, "server1":120, "coord":29, "server3":41, "server2":41}
+1418385060779153711 GetCommitted {"ClientId":"1","OpId":4,"Key":"k1","Value":"val1"}
+server1 {"coord":29, "server3":41, "server2":41, "client2":25, "client1":25, "server1":121}
+1418385060779153711 GenerateTokenTrace {"Token":"p3NlcnZlcjHPE68dsqZ2WS+GpWNvb3JkHadzZXJ2ZXIzKadzZXJ2ZXIyKadjbGllbnQyGadjbGllbnQxGadzZXJ2ZXIxeQ=="}
+client1 {"server3":41, "server2":41, "server1":121, "client2":25, "coord":29, "client1":26}
+1418385060779153711 ReceiveTokenTrace {"Token":"p3NlcnZlcjHPE68dsqZ2WS+GpWNvb3JkHadzZXJ2ZXIzKadzZXJ2ZXIyKadjbGllbnQyGadjbGllbnQxGadzZXJ2ZXIxeQ=="}
+client1 {"server2":41, "server1":121, "client2":25, "coord":29, "client1":27, "server3":41}
+1418385060779153711 GetResultRecvd {"OpId":4,"Key":"k1","Value":"val1"}
+client1 {"coord":29, "client1":28, "server3":41, "server2":41, "server1":121, "client2":25}
+4429675673713441190 GenerateTokenTrace {"Token":"p2NsaWVudDHPPXlejkng+aaGp3NlcnZlcjIpp3NlcnZlcjF5p2NsaWVudDIZpWNvb3JkHadjbGllbnQxHKdzZXJ2ZXIzKQ=="}
+client1 {"server2":41, "server1":121, "client2":25, "coord":29, "client1":29, "server3":41}
+4429675673713441190 KvslibStop {"ClientId":"1"}
