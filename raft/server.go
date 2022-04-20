@@ -171,6 +171,7 @@ type Server struct {
 	triggerAllFollowerLogUpdate chan bool
 	existsInterestingN          chan bool
 	runLeader                   chan bool
+	stopHeartbeats              chan bool
 }
 
 // AppendEntries RPC
@@ -745,13 +746,13 @@ func (s *Server) runRaft() {
 func (s *Server) raftFollower(errorChan chan<- error) {
 	for {
 		canRunFollower := <-s.runFollower
-		s.trace.RecordAction(BecameFollower{s.ServerId})
-
-		// init volatile state
-		s.commitIndex = 0
-		s.lastApplied = 0
 		if canRunFollower {
 			s.raftFollowerLoop(errorChan)
+			s.trace.RecordAction(BecameFollower{s.ServerId})
+
+			// init volatile state
+			s.commitIndex = 0
+			s.lastApplied = 0
 		}
 	}
 
@@ -785,12 +786,11 @@ func (s *Server) raftFollowerLoop(errorChan chan<- error) {
 func (s *Server) raftLeader(errorChan chan<- error) {
 	for {
 		canRunLeader := <-s.runLeader
-		s.trace.RecordAction(BecameLeader{s.ServerId})
-
-		// init volatile state
-		s.initLeaderVolatileState()
-
 		if canRunLeader {
+			s.trace.RecordAction(BecameLeader{s.ServerId})
+
+			// init volatile state
+			s.initLeaderVolatileState()
 			s.raftLeaderLoop(errorChan)
 		}
 	}
@@ -810,14 +810,14 @@ func (s *Server) raftLeaderLoop(errorChan chan<- error) {
 		of matchIndex[i] ≥ N, and log[N].term == currentTerm:
 		set commitIndex = N (§5.3, §5.4)
 	*/
-	stopHeartbeats := make(chan bool)
-	go s.sendHeartbeats(stopHeartbeats)
+	s.stopHeartbeats = make(chan bool)
+	go s.sendHeartbeats()
 	// var err error
 	for {
 		select {
 		case canRunLeader := <-s.runLeader:
 			if !canRunLeader {
-				stopHeartbeats <- true
+				s.stopHeartbeats <- true
 				return
 			}
 		case <-s.commitIndexUpdated:
@@ -848,7 +848,7 @@ func (s *Server) initLeaderVolatileState() {
 	}
 }
 
-func (s *Server) sendHeartbeats(stopHeartbeats chan bool) {
+func (s *Server) sendHeartbeats() {
 	ticker := time.NewTicker(time.Duration(s.HeartbeatTimeout) * time.Second)
 
 	go func() {
@@ -868,10 +868,10 @@ func (s *Server) sendHeartbeats(stopHeartbeats chan bool) {
 						continue
 					}
 					peerReplies := make(chan bool, len(s.Peers)-1)
-					go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace())
+					go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace(), true)
 				}
 
-			case <-stopHeartbeats:
+			case <-s.stopHeartbeats:
 				fmt.Println("(Leader heartbeats) Received stop heart beats; stopping...")
 				return
 			}
@@ -930,7 +930,7 @@ func (s *Server) leaderHandleCommand(clientCommand ClientCommand, errorChan chan
 		if peer.ServerId == s.ServerId {
 			continue
 		}
-		go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace())
+		go s.sendAppendEntry(peer, &appendEntryArg, peerReplies, s.tracer.CreateTrace(), false)
 	}
 	/* Can return once we have a majority*/
 	<-majorityReplied
@@ -964,7 +964,7 @@ func (s *Server) countReplies(currPeers int, peerReplies chan bool, majorityRepl
 }
 
 /* If followers crash or run slowly, leader retries indefinitely, even if it has reponded to client, until all followers store log entry*/
-func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool, trace *tracing.Trace) error {
+func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerReplies chan bool, trace *tracing.Trace, isHeartbeat bool) error {
 	trace.RecordAction(AppendEntriesRequestSent(*args))
 	args.Token = trace.GenerateToken()
 
@@ -983,8 +983,11 @@ func (s *Server) sendAppendEntry(peer ServerInfo, args *AppendEntriesArg, peerRe
 	for {
 		peerConn.Go("Server.AppendEntries", args, &reply, done)
 		select {
-		/* leader retries indefinitely if can't reach follower*/
+		/* leader retries indefinitely if can't reach follower, unless its a heartbeat, then just return since non-eseential message*/
 		case <-time.After(20 * time.Second):
+			if isHeartbeat {
+				return nil
+			}
 			continue
 		case call := <-done:
 			if call.Error == nil {
@@ -1111,7 +1114,9 @@ func (s *Server) applyEntry(entry Entry) (Command, error) {
 }
 
 func (s *Server) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
-	// FIXME maybe instead of doing this, we can just look at s.isLeader
+	if s.isLeader && arg.Term > s.currentTerm {
+		s.rpcGotTermGreaterThanCurrentTerm <- arg.Term
+	}
 	<-s.appendEntriesCanRespond
 
 	trace := s.trace.Tracer.ReceiveToken(arg.Token)
@@ -1289,4 +1294,8 @@ func simulateLeaderFailedBeforeReplyingToClient(s *Server) {
 		fmt.Println("Failing leader before it responds back to client")
 		os.Exit(1)
 	}
+}
+func (s *Server) TestStopSendingLeaderHeartBeats(arg bool, reply *bool) error {
+	s.stopHeartbeats <- true
+	return nil
 }
